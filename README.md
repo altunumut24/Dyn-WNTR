@@ -1,6 +1,6 @@
 # Dyn-WNTR
 
-**Dyn-WNTR** is an extension of the **WNTR** framework, designed to enable **real-time** and **dynamic simulations** of **water distribution networks (WDNs)**. This version allows for the continuous updating of water network models based on real-time data, providing a flexible and interactive platform for optimization, predictive modeling, and system management.
+**Dyn-WNTR** is an extension of the **WNTR** framework([here](https://github.com/USEPA/WNTR)), designed to enable **real-time** and **dynamic simulations** of **water distribution networks (WDNs)**. This version allows for the continuous updating of water network models based on real-time data, providing a flexible and interactive platform for optimization, predictive modeling, and system management.
 
 ### Key Features:
 - **Real-time Simulation**: Unlike traditional simulators, Dyn-WNTR supports real-time updates, enabling continuous changes to valves, pumps, demands, and network components during the simulation.
