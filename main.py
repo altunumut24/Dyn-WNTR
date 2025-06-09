@@ -149,7 +149,7 @@ def main():
     has_active_leak = []
     has_active_demand = []
     closed_pipe = []
-
+    i = 0  # Initialize simulation counter
 
     node_list = wn.junction_name_list
     link_list = wn.link_name_list
@@ -212,7 +212,9 @@ def main():
             print("Simulation interrupted by user.")
             sys.exit()
         else:
-            print("An error occurred during the simulation.")
+            print(f"An error occurred during the simulation: {e}")
+            import traceback
+            traceback.print_exc()
 
 if __name__ == "__main__":
     main()

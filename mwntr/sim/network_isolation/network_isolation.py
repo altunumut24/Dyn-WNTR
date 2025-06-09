@@ -5,14 +5,80 @@
 # the SWIG interface file instead.
 
 from sys import version_info as _swig_python_version_info
+import platform
+import numpy as np
+
 if _swig_python_version_info < (2, 7, 0):
     raise RuntimeError("Python 2.7 or later required")
 
-# Pull in all the attributes from the low-level C/C++ module
-if __package__ or "." in __name__:
-    from ._network_isolation import *
-else:
-    from _network_isolation import *
+# Pull in all the attributes from the low-level C/C++ module with fallback
+try:
+    if __package__ or "." in __name__:
+        from ._network_isolation import *
+    else:
+        from _network_isolation import *
+    print(f"Successfully loaded compiled _network_isolation extension")
+except ImportError as e:
+    print(f"Warning: Could not load compiled _network_isolation extension: {e}")
+    print(f"Platform: {platform.system()} {platform.machine()}")
+    print("Using fallback implementation for network isolation functions.")
+    
+    # Fallback implementations
+    def check_for_isolated_junctions(source_ids, node_indicator, indptr, indices, data, number_of_connections):
+        """
+        Fallback implementation for check_for_isolated_junctions.
+        This is a simplified version that may not be as efficient as the compiled version.
+        
+        Parameters:
+        - source_ids: array of source node IDs (tanks, reservoirs)
+        - node_indicator: array to mark isolated nodes (modified in-place)
+        - indptr, indices, data: CSR sparse matrix representation of the graph
+        - number_of_connections: array of connection counts per node
+        """
+        # Simple implementation: mark all non-source nodes as potentially isolated
+        # then do a basic connectivity check
+        
+        # Reset node_indicator: 0 = connected, 1 = isolated
+        node_indicator.fill(1)
+        
+        # Mark source nodes as connected
+        for source_id in source_ids:
+            if source_id < len(node_indicator):
+                node_indicator[source_id] = 0
+        
+        # Simple BFS/DFS to find connected components
+        # This is a simplified version - the real implementation would be more sophisticated
+        visited = set()
+        
+        def mark_connected(node_id):
+            if node_id in visited or node_id >= len(node_indicator):
+                return
+            visited.add(node_id)
+            node_indicator[node_id] = 0  # Mark as connected
+            
+            # Check neighbors using CSR format
+            start_idx = indptr[node_id]
+            end_idx = indptr[node_id + 1]
+            
+            for idx in range(start_idx, end_idx):
+                if data[idx] > 0:  # There's a connection
+                    neighbor = indices[idx]
+                    mark_connected(neighbor)
+        
+        # Start from all source nodes and mark reachable nodes
+        for source_id in source_ids:
+            if source_id < len(node_indicator):
+                mark_connected(source_id)
+        
+        # The function modifies node_indicator in-place, no return value needed
+    
+    def get_long_size():
+        """
+        Fallback implementation for get_long_size.
+        Returns the size of a long integer in bytes.
+        """
+        import sys
+        return 8 if sys.maxsize > 2**32 else 4
 
 try:
     import builtins as __builtin__

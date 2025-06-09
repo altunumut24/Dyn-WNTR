@@ -1,31 +1,8 @@
-# Required
-numpy>=1.21,<2.0
-scipy<1.13.0
+streamlit
+numpy
+scipy
+sympy
+matplotlib
 networkx
 pandas
-matplotlib
-setuptools
-
-# Optional
-plotly<6.0
-folium
-utm
-openpyxl
-geopandas<1.0
-fiona<1.10
-rasterio
-rtree
-
-# Documentation
-sphinx
-sphinx_design
-sphinx_rtd_theme
-pydata_sphinx_theme
-sphinxcontrib-bibtex
-
-# Testing
-pytest
-nbformat
-nbconvert
-ipykernel
-coverage
+plotly 
