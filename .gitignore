@@ -9,6 +9,7 @@ __pycache__/
 *.pyzw
 mwntr/tests/__pycache__/
 mwntr/sim/aml/__pycache__/
+mwntr/utils/__pycache__/
 mwntr/sim/aml/evaluator.pyc
 mwntr/sim/aml/evaluator.pyo
 mwntr/sim/aml/evaluator.pyd
