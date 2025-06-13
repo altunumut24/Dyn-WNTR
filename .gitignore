@@ -1,0 +1,26 @@
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pyw
+*.pyz
+*.pywz
+*.pyzw
+mwntr/tests/__pycache__/
+mwntr/sim/aml/__pycache__/
+mwntr/sim/aml/evaluator.pyc
+mwntr/sim/aml/evaluator.pyo
+mwntr/sim/aml/evaluator.pyd
+mwntr/sim/aml/evaluator.pyw
+mwntr/sim/aml/evaluator.pyz
+mwntr/sim/aml/evaluator.pywz
+mwntr/sim/aml/evaluator.pyzw
+# Python cache files
+__pycache__/
+*.py[cod]
+*.class
+
+# Virtual environments
+venv_new/
+.env
