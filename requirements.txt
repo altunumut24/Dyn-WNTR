@@ -30,3 +30,4 @@ nbformat
 nbconvert
 ipykernel
 coverage
+sympy

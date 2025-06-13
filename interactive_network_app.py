@@ -8,18 +8,12 @@ import time
 from typing import List, Dict, Any, Optional, Tuple
 import numpy as np
 
-# Import mwntr components
-try:
-    import mwntr
-    from mwntr.sim.interactive_network_simulator import MWNTRInteractiveSimulator
-    from mwntr.network import WaterNetworkModel, Node, Link, LinkStatus
-    from mwntr.network.elements import Junction, Tank, Reservoir, Pipe, Pump, Valve
-    from mwntr.graphics.network import plot_interactive_network
-    MWNTR_AVAILABLE = True
-except ImportError:
-    MWNTR_AVAILABLE = False
-    st.error("MWNTR library not available. Please install mwntr to use this application.")
-    st.stop()
+
+from mwntr.sim.interactive_network_simulator import MWNTRInteractiveSimulator
+from mwntr.network import WaterNetworkModel, Node, Link, LinkStatus
+from mwntr.network.elements import Junction, Tank, Reservoir, Pipe, Pump, Valve
+from mwntr.graphics.network import plot_interactive_network
+MWNTR_AVAILABLE = True
 
 # Configuration
 INP_FILE = 'NET_4.inp'
@@ -67,7 +61,7 @@ LINK_EVENTS = {
 def load_network_model(inp_file: str) -> Optional[WaterNetworkModel]:
     """Load the water network model from INP file."""
     try:
-        wn = mwntr.network.WaterNetworkModel(inp_file)
+        wn = WaterNetworkModel(inp_file)
         wn.options.hydraulic.demand_model = 'PDD'
         wn.options.time.duration = SIMULATION_DURATION_SECONDS 
         wn.options.time.hydraulic_timestep = HYDRAULIC_TIMESTEP_SECONDS 
