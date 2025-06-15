@@ -1,0 +1,395 @@
+{
+  "metadata": {
+    "generated_at": "2025-06-15 23:40:06",
+    "total_events": 34,
+    "duration_seconds": 34680,
+    "event_types": [
+      "add_demand",
+      "stop_leak",
+      "open_pipe",
+      "remove_demand",
+      "close_pipe",
+      "start_leak"
+    ],
+    "elements_affected": [
+      "59",
+      "71",
+      "43",
+      "10173",
+      "30",
+      "10257",
+      "12",
+      "10191",
+      "66",
+      "73",
+      "48",
+      "10125",
+      "51",
+      "3",
+      "10243",
+      "70",
+      "55",
+      "33"
+    ],
+    "description": "Randomly generated water network simulation events"
+  },
+  "events": [
+    {
+      "time": 300,
+      "element_name": "10191",
+      "element_type": "Pipe",
+      "element_category": "link",
+      "event_type": "close_pipe",
+      "parameters": {},
+      "description": "Pipe 10191 closed"
+    },
+    {
+      "time": 480,
+      "element_name": "10191",
+      "element_type": "Pipe",
+      "element_category": "link",
+      "event_type": "open_pipe",
+      "parameters": {},
+      "description": "Pipe 10191 opened"
+    },
+    {
+      "time": 1860,
+      "element_name": "43",
+      "element_type": "Junction",
+      "element_category": "node",
+      "event_type": "start_leak",
+      "parameters": {
+        "leak_area": 0.00779206899033594,
+        "leak_discharge_coefficient": 0.7763903706566994
+      },
+      "description": "Leak started on 43 (area: 0.0078m², coeff: 0.78)"
+    },
+    {
+      "time": 2460,
+      "element_name": "10257",
+      "element_type": "Pipe",
+      "element_category": "link",
+      "event_type": "close_pipe",
+      "parameters": {},
+      "description": "Pipe 10257 closed"
+    },
+    {
+      "time": 4560,
+      "element_name": "10173",
+      "element_type": "Pipe",
+      "element_category": "link",
+      "event_type": "close_pipe",
+      "parameters": {},
+      "description": "Pipe 10173 closed"
+    },
+    {
+      "time": 5400,
+      "element_name": "10125",
+      "element_type": "Pipe",
+      "element_category": "link",
+      "event_type": "close_pipe",
+      "parameters": {},
+      "description": "Pipe 10125 closed"
+    },
+    {
+      "time": 5880,
+      "element_name": "48",
+      "element_type": "Junction",
+      "element_category": "node",
+      "event_type": "add_demand",
+      "parameters": {
+        "base_demand": 0.13708810087730894,
+        "pattern_name": null,
+        "category": "event_generated"
+      },
+      "description": "Additional demand added to 48 (0.137 m³/s)"
+    },
+    {
+      "time": 10560,
+      "element_name": "71",
+      "element_type": "Junction",
+      "element_category": "node",
+      "event_type": "start_leak",
+      "parameters": {
+        "leak_area": 0.02370034132187804,
+        "leak_discharge_coefficient": 0.7832417092356097
+      },
+      "description": "Leak started on 71 (area: 0.0237m², coeff: 0.78)"
+    },
+    {
+      "time": 11220,
+      "element_name": "59",
+      "element_type": "Junction",
+      "element_category": "node",
+      "event_type": "start_leak",
+      "parameters": {
+        "leak_area": 0.04054750725994483,
+        "leak_discharge_coefficient": 0.6218485717202274
+      },
+      "description": "Leak started on 59 (area: 0.0405m², coeff: 0.62)"
+    },
+    {
+      "time": 11460,
+      "element_name": "48",
+      "element_type": "Junction",
+      "element_category": "node",
+      "event_type": "remove_demand",
+      "parameters": {
+        "name": "event_generated"
+      },
+      "description": "Additional demand removed from 48"
+    },
+    {
+      "time": 11880,
+      "element_name": "43",
+      "element_type": "Junction",
+      "element_category": "node",
+      "event_type": "stop_leak",
+      "parameters": {},
+      "description": "Leak stopped on 43"
+    },
+    {
+      "time": 12660,
+      "element_name": "73",
+      "element_type": "Junction",
+      "element_category": "node",
+      "event_type": "add_demand",
+      "parameters": {
+        "base_demand": 0.09964467450749225,
+        "pattern_name": null,
+        "category": "event_generated"
+      },
+      "description": "Additional demand added to 73 (0.100 m³/s)"
+    },
+    {
+      "time": 13380,
+      "element_name": "3",
+      "element_type": "Junction",
+      "element_category": "node",
+      "event_type": "start_leak",
+      "parameters": {
+        "leak_area": 0.007982785729247597,
+        "leak_discharge_coefficient": 0.7671575591416935
+      },
+      "description": "Leak started on 3 (area: 0.0080m², coeff: 0.77)"
+    },
+    {
+      "time": 14220,
+      "element_name": "66",
+      "element_type": "Junction",
+      "element_category": "node",
+      "event_type": "start_leak",
+      "parameters": {
+        "leak_area": 0.012057021055103836,
+        "leak_discharge_coefficient": 0.678303766699834
+      },
+      "description": "Leak started on 66 (area: 0.0121m², coeff: 0.68)"
+    },
+    {
+      "time": 16740,
+      "element_name": "12",
+      "element_type": "Junction",
+      "element_category": "node",
+      "event_type": "add_demand",
+      "parameters": {
+        "base_demand": 0.09744337324726621,
+        "pattern_name": null,
+        "category": "event_generated"
+      },
+      "description": "Additional demand added to 12 (0.097 m³/s)"
+    },
+    {
+      "time": 17100,
+      "element_name": "59",
+      "element_type": "Junction",
+      "element_category": "node",
+      "event_type": "stop_leak",
+      "parameters": {},
+      "description": "Leak stopped on 59"
+    },
+    {
+      "time": 17220,
+      "element_name": "51",
+      "element_type": "Junction",
+      "element_category": "node",
+      "event_type": "add_demand",
+      "parameters": {
+        "base_demand": 0.17375313440372755,
+        "pattern_name": null,
+        "category": "event_generated"
+      },
+      "description": "Additional demand added to 51 (0.174 m³/s)"
+    },
+    {
+      "time": 18180,
+      "element_name": "12",
+      "element_type": "Junction",
+      "element_category": "node",
+      "event_type": "remove_demand",
+      "parameters": {
+        "name": "event_generated"
+      },
+      "description": "Additional demand removed from 12"
+    },
+    {
+      "time": 18420,
+      "element_name": "10173",
+      "element_type": "Pipe",
+      "element_category": "link",
+      "event_type": "open_pipe",
+      "parameters": {},
+      "description": "Pipe 10173 opened"
+    },
+    {
+      "time": 18960,
+      "element_name": "51",
+      "element_type": "Junction",
+      "element_category": "node",
+      "event_type": "remove_demand",
+      "parameters": {
+        "name": "event_generated"
+      },
+      "description": "Additional demand removed from 51"
+    },
+    {
+      "time": 19440,
+      "element_name": "10125",
+      "element_type": "Pipe",
+      "element_category": "link",
+      "event_type": "open_pipe",
+      "parameters": {},
+      "description": "Pipe 10125 opened"
+    },
+    {
+      "time": 19860,
+      "element_name": "71",
+      "element_type": "Junction",
+      "element_category": "node",
+      "event_type": "stop_leak",
+      "parameters": {},
+      "description": "Leak stopped on 71"
+    },
+    {
+      "time": 20700,
+      "element_name": "3",
+      "element_type": "Junction",
+      "element_category": "node",
+      "event_type": "stop_leak",
+      "parameters": {},
+      "description": "Leak stopped on 3"
+    },
+    {
+      "time": 20940,
+      "element_name": "66",
+      "element_type": "Junction",
+      "element_category": "node",
+      "event_type": "stop_leak",
+      "parameters": {},
+      "description": "Leak stopped on 66"
+    },
+    {
+      "time": 22320,
+      "element_name": "70",
+      "element_type": "Junction",
+      "element_category": "node",
+      "event_type": "start_leak",
+      "parameters": {
+        "leak_area": 0.039439959965121625,
+        "leak_discharge_coefficient": 0.6310006680632205
+      },
+      "description": "Leak started on 70 (area: 0.0394m², coeff: 0.63)"
+    },
+    {
+      "time": 22860,
+      "element_name": "70",
+      "element_type": "Junction",
+      "element_category": "node",
+      "event_type": "stop_leak",
+      "parameters": {},
+      "description": "Leak stopped on 70"
+    },
+    {
+      "time": 25920,
+      "element_name": "10257",
+      "element_type": "Pipe",
+      "element_category": "link",
+      "event_type": "open_pipe",
+      "parameters": {},
+      "description": "Pipe 10257 opened"
+    },
+    {
+      "time": 28080,
+      "element_name": "55",
+      "element_type": "Junction",
+      "element_category": "node",
+      "event_type": "start_leak",
+      "parameters": {
+        "leak_area": 0.010892125228340009,
+        "leak_discharge_coefficient": 0.8185034169958811
+      },
+      "description": "Leak started on 55 (area: 0.0109m², coeff: 0.82)"
+    },
+    {
+      "time": 28980,
+      "element_name": "55",
+      "element_type": "Junction",
+      "element_category": "node",
+      "event_type": "stop_leak",
+      "parameters": {},
+      "description": "Leak stopped on 55"
+    },
+    {
+      "time": 29580,
+      "element_name": "33",
+      "element_type": "Junction",
+      "element_category": "node",
+      "event_type": "start_leak",
+      "parameters": {
+        "leak_area": 0.027353130005394546,
+        "leak_discharge_coefficient": 0.6737020071204748
+      },
+      "description": "Leak started on 33 (area: 0.0274m², coeff: 0.67)"
+    },
+    {
+      "time": 29640,
+      "element_name": "33",
+      "element_type": "Junction",
+      "element_category": "node",
+      "event_type": "stop_leak",
+      "parameters": {},
+      "description": "Leak stopped on 33"
+    },
+    {
+      "time": 31560,
+      "element_name": "73",
+      "element_type": "Junction",
+      "element_category": "node",
+      "event_type": "remove_demand",
+      "parameters": {
+        "name": "event_generated"
+      },
+      "description": "Additional demand removed from 73"
+    },
+    {
+      "time": 32220,
+      "element_name": "30",
+      "element_type": "Junction",
+      "element_category": "node",
+      "event_type": "start_leak",
+      "parameters": {
+        "leak_area": 0.012946800566026258,
+        "leak_discharge_coefficient": 0.8436744477394071
+      },
+      "description": "Leak started on 30 (area: 0.0129m², coeff: 0.84)"
+    },
+    {
+      "time": 34680,
+      "element_name": "10243",
+      "element_type": "Pipe",
+      "element_category": "link",
+      "event_type": "close_pipe",
+      "parameters": {},
+      "description": "Pipe 10243 closed"
+    }
+  ]
+}

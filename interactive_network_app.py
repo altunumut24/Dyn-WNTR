@@ -721,6 +721,10 @@ def run_simulation_step(sim: MWNTRInteractiveSimulator, wn: WaterNetworkModel):
 
 
 
+# Import for JSON handling
+import json
+import io
+
 # Main Streamlit App
 st.set_page_config(
     layout="wide", 
@@ -826,6 +830,82 @@ st.markdown("""
 
 st.markdown('<h1 class="main-title">🔧 Interactive Water Network Event Simulator</h1>', unsafe_allow_html=True)
 
+# Helper functions for batch simulation
+def load_events_from_json(uploaded_file) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """Load events from uploaded JSON file."""
+    try:
+        content = uploaded_file.read()
+        if isinstance(content, bytes):
+            content = content.decode('utf-8')
+        
+        data = json.loads(content)
+        
+        if 'events' in data and 'metadata' in data:
+            return data['events'], data['metadata']
+        else:
+            # Assume the entire JSON is just a list of events
+            return data, {}
+    except Exception as e:
+        st.error(f"Error loading JSON file: {str(e)}")
+        return [], {}
+
+def display_event_timeline(events: List[Dict[str, Any]], current_time: float):
+    """Display a timeline of events with current position."""
+    if not events:
+        return
+        
+    # Create timeline visualization
+    fig = go.Figure()
+    
+    # Group events by type for color coding
+    event_types = {}
+    for i, event in enumerate(events):
+        event_type = event['event_type']
+        if event_type not in event_types:
+            event_types[event_type] = []
+        event_types[event_type].append((event['time'], i, event['element_name']))
+    
+    # Color map for different event types
+    colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f']
+    
+    for i, (event_type, event_data) in enumerate(event_types.items()):
+        times = [ed[0] for ed in event_data]
+        indices = [ed[1] for ed in event_data]
+        names = [ed[2] for ed in event_data]
+        
+        fig.add_trace(go.Scatter(
+            x=times,
+            y=[event_type] * len(times),
+            mode='markers',
+            marker=dict(
+                size=8,
+                color=colors[i % len(colors)],
+                symbol='circle'
+            ),
+            text=[f"{event_type}<br>Element: {name}<br>Time: {t}s" for t, name in zip(times, names)],
+            hovertemplate='%{text}<extra></extra>',
+            name=event_type,
+            showlegend=True
+        ))
+    
+    # Add current time line
+    if current_time > 0:
+        fig.add_vline(
+            x=current_time,
+            line=dict(color="red", width=3, dash="dash"),
+            annotation_text=f"Current Time: {current_time}s"
+        )
+    
+    fig.update_layout(
+        title="Event Timeline",
+        xaxis_title="Time (seconds)",
+        yaxis_title="Event Type",
+        height=300,
+        hovermode='closest'
+    )
+    
+    st.plotly_chart(fig, use_container_width=True)
+
 # Initialize session state
 if 'wn' not in st.session_state:
     st.session_state.wn = None
@@ -846,480 +926,868 @@ if 'current_sim_time' not in st.session_state:
 if 'simulation_data' not in st.session_state:
     st.session_state.simulation_data = {'time': [], 'pressures': {}, 'flows': {}}
 
+# Batch simulator session state
+if 'batch_wn' not in st.session_state:
+    st.session_state.batch_wn = None
+if 'batch_sim' not in st.session_state:
+    st.session_state.batch_sim = None
+if 'loaded_events' not in st.session_state:
+    st.session_state.loaded_events = []
+if 'event_metadata' not in st.session_state:
+    st.session_state.event_metadata = {}
+if 'batch_current_sim_time' not in st.session_state:
+    st.session_state.batch_current_sim_time = 0
+if 'batch_applied_events' not in st.session_state:
+    st.session_state.batch_applied_events = []
+if 'batch_simulation_data' not in st.session_state:
+    st.session_state.batch_simulation_data = {'time': [], 'pressures': {}, 'flows': {}}
+
 # Load network with better UI feedback
 if st.session_state.wn is None:
     with st.spinner("🔄 Loading network model..."):
         st.session_state.wn = load_network_model(INP_FILE)
         if st.session_state.wn:
             st.session_state.sim = MWNTRInteractiveSimulator(st.session_state.wn)
+            # Also initialize batch simulator with same network
+            st.session_state.batch_wn = load_network_model(INP_FILE)
+            if st.session_state.batch_wn:
+                st.session_state.batch_sim = MWNTRInteractiveSimulator(st.session_state.batch_wn)
             st.success(f"✅ Network '{INP_FILE}' loaded successfully!")
             time.sleep(1)  # Brief pause to show success message
         else:
             st.stop()
 
-wn = st.session_state.wn
-sim = st.session_state.sim
+# Create tabs for different modes
+tab1, tab2 = st.tabs(["🎮 Interactive Mode", "📋 Batch Simulator"])
 
-# Network Status Dashboard
-with st.container():
-    st.markdown('<h3 class="section-header">📊 Network Status</h3>', unsafe_allow_html=True)
-    col1, col2, col3, col4 = st.columns(4)
+with tab1:
+    # Interactive mode content (existing functionality)
+    wn = st.session_state.wn
+    sim = st.session_state.sim
     
-    with col1:
-        st.metric("Total Nodes", len(wn.node_name_list), help="Junction, Tank, and Reservoir nodes")
-    with col2:
-        st.metric("Total Links", len(wn.link_name_list), help="Pipes, Pumps, and Valves")
-    with col3:
-        if st.session_state.current_element:
-            st.metric("Selected Element", st.session_state.current_element['name'], 
-                     delta=st.session_state.current_element['type'], delta_color="normal")
-        else:
-            st.metric("Selected Element", "None", help="Click on network elements to select")
-    with col4:
-        st.metric("Scheduled Events", len(st.session_state.scheduled_events), 
-                 delta=len(st.session_state.applied_events), delta_color="normal")
+    # Network Status Dashboard
+    with st.container():
+        st.markdown('<h3 class="section-header">📊 Network Status</h3>', unsafe_allow_html=True)
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric("Total Nodes", len(wn.node_name_list), help="Junction, Tank, and Reservoir nodes")
+        with col2:
+            st.metric("Total Links", len(wn.link_name_list), help="Pipes, Pumps, and Valves")
+        with col3:
+            if st.session_state.current_element:
+                st.metric("Selected Element", st.session_state.current_element['name'], 
+                         delta=st.session_state.current_element['type'], delta_color="normal")
+            else:
+                st.metric("Selected Element", "None", help="Click on network elements to select")
+        with col4:
+            st.metric("Scheduled Events", len(st.session_state.scheduled_events), 
+                     delta=len(st.session_state.applied_events), delta_color="normal")
 
-st.markdown("---")
+        st.markdown("---")
 
-# Interactive Network Visualization with Side Panel
-st.markdown('<h3 class="section-header">🗺️ Interactive Network Map & Event Configuration</h3>', unsafe_allow_html=True)
+    # Interactive Network Visualization with Side Panel
+    st.markdown('<h3 class="section-header">🗺️ Interactive Network Map & Event Configuration</h3>', unsafe_allow_html=True)
 
-# Main layout: Network map on left, controls on right
-map_col, control_col = st.columns([3, 1])
+    # Main layout: Network map on left, controls on right
+    map_col, control_col = st.columns([3, 1])
 
-with map_col:
-    # Instructions and controls above the map
-    st.info("🖱️ **Click on nodes (circles) or links (squares) to select and configure events**")
-    
-    # Visualization controls
-    viz_col1, viz_col2, viz_col3 = st.columns([2, 1, 1])
-    with viz_col1:
-        pass  # Reserved for future controls
-    with viz_col2:
-        show_sim_data = st.toggle(
-            "🌊 Live Visualization", 
-            value=sim.initialized_simulation,
-            disabled=not sim.initialized_simulation,
-            help="Show real-time pressure and flow data"
+    with map_col:
+        # Instructions and controls above the map
+        st.info("🖱️ **Click on nodes (circles) or links (squares) to select and configure events**")
+        
+        # Visualization controls
+        viz_col1, viz_col2, viz_col3 = st.columns([2, 1, 1])
+        with viz_col1:
+            pass  # Reserved for future controls
+        with viz_col2:
+            show_sim_data = st.toggle(
+                "🌊 Live Visualization", 
+                value=sim.initialized_simulation,
+                disabled=not sim.initialized_simulation,
+                help="Show real-time pressure and flow data"
+            )
+        with viz_col3:
+            if st.button("🧭 Legend", help="Show network element types"):
+                with st.expander("🎨 Network Legend", expanded=True):
+                    st.markdown("""
+                    **Nodes:** 🔵 Junctions | 🔷 Tanks | 🟢 Reservoirs  
+                    **Links:** ▬ Pipes | ▬ Pumps | ▬ Valves  
+                    **Selected:** 🔴 Red highlights
+                    """)
+
+        # Network plot
+        fig = create_network_plot(
+            wn, 
+            st.session_state.selected_nodes, 
+            st.session_state.selected_links,
+            show_simulation_data=show_sim_data,
+            sim_initialized=sim.initialized_simulation
         )
-    with viz_col3:
-        if st.button("🧭 Legend", help="Show network element types"):
-            with st.expander("🎨 Network Legend", expanded=True):
-                st.markdown("""
-                **Nodes:** 🔵 Junctions | 🔷 Tanks | 🟢 Reservoirs  
-                **Links:** ▬ Pipes | ▬ Pumps | ▬ Valves  
-                **Selected:** 🔴 Red highlights
-                """)
-
-    # Network plot
-    fig = create_network_plot(
-        wn, 
-        st.session_state.selected_nodes, 
-        st.session_state.selected_links,
-        show_simulation_data=show_sim_data,
-        sim_initialized=sim.initialized_simulation
-    )
-    
-    # Display plot with click handling
-    chart_data = st.plotly_chart(
-        fig, 
-        use_container_width=True, 
-        key="network_plot_interaction",
-        on_select="rerun",
-        selection_mode="points"
-    )
-    
-    # Color scale legends below the map
-    if show_sim_data and sim.initialized_simulation:
-        st.markdown('<h4 class="section-header">🎨 Color Scales</h4>', unsafe_allow_html=True)
         
-        # Get current data for legends (simplified)
-        node_pressures = {}
-        link_flows = {}
+        # Display plot with click handling
+        chart_data = st.plotly_chart(
+            fig, 
+            use_container_width=True, 
+            key="network_plot_interaction",
+            on_select="rerun",
+            selection_mode="points"
+        )
         
-        for node_name, node in wn.nodes():
-            try:
-                pressure = getattr(node, 'pressure', 0) if hasattr(node, 'pressure') else 0
-                node_pressures[node_name] = float(pressure) if pressure is not None else 0.0
-            except:
-                node_pressures[node_name] = 0.0
-        
-        for link_name, link in wn.links():
-            try:
-                flow = getattr(link, 'flow', 0) if hasattr(link, 'flow') else 0
-                link_flows[link_name] = float(flow) if flow is not None else 0.0
-            except:
-                link_flows[link_name] = 0.0
-        
-        # Calculate ranges
-        if node_pressures:
-            pressure_values = [float(p) for p in node_pressures.values() if p is not None]
-            if pressure_values:
-                min_pressure = min(pressure_values)
-                max_pressure = max(pressure_values)
+        # Color scale legends below the map
+        if show_sim_data and sim.initialized_simulation:
+            st.markdown('<h4 class="section-header">🎨 Color Scales</h4>', unsafe_allow_html=True)
+            
+            # Get current data for legends (simplified)
+            node_pressures = {}
+            link_flows = {}
+            
+            for node_name, node in wn.nodes():
+                try:
+                    pressure = getattr(node, 'pressure', 0) if hasattr(node, 'pressure') else 0
+                    node_pressures[node_name] = float(pressure) if pressure is not None else 0.0
+                except:
+                    node_pressures[node_name] = 0.0
+            
+            for link_name, link in wn.links():
+                try:
+                    flow = getattr(link, 'flow', 0) if hasattr(link, 'flow') else 0
+                    link_flows[link_name] = float(flow) if flow is not None else 0.0
+                except:
+                    link_flows[link_name] = 0.0
+            
+            # Calculate ranges
+            if node_pressures:
+                pressure_values = [float(p) for p in node_pressures.values() if p is not None]
+                if pressure_values:
+                    min_pressure = min(pressure_values)
+                    max_pressure = max(pressure_values)
+                else:
+                    min_pressure = max_pressure = 0
             else:
                 min_pressure = max_pressure = 0
-        else:
-            min_pressure = max_pressure = 0
-            
-        if link_flows:
-            flow_values = [float(f) for f in link_flows.values() if f is not None]
-            if flow_values:
-                min_flow = min(flow_values)
-                max_flow = max(flow_values)
+                
+            if link_flows:
+                flow_values = [float(f) for f in link_flows.values() if f is not None]
+                if flow_values:
+                    min_flow = min(flow_values)
+                    max_flow = max(flow_values)
+                else:
+                    min_flow = max_flow = 0
             else:
                 min_flow = max_flow = 0
-        else:
-            min_flow = max_flow = 0
-        
-        # Display legends side by side
-        legend_col1, legend_col2 = st.columns(2)
-        
-        with legend_col1:
-            if node_pressures and (min_pressure != max_pressure or min_pressure != 0):
-                pressure_fig = create_pressure_colorbar(min_pressure, max_pressure)
-                st.plotly_chart(pressure_fig, use_container_width=True)
-            else:
-                st.info("🔵 **Pressure**: No data yet")
-        
-        with legend_col2:
-            if link_flows and (min_flow != max_flow or min_flow != 0):
-                flow_fig = create_flow_colorbar(min_flow, max_flow)
-                st.plotly_chart(flow_fig, use_container_width=True)
-            else:
-                st.info("🔗 **Flow**: No data yet")
-
-# Process click events from the network plot
-if chart_data and chart_data.get('selection') and chart_data['selection']['points']:
-    selected_point = chart_data['selection']['points'][0]
-    
-    if selected_point.get('customdata'):
-        custom_data = selected_point['customdata']
-        element_name = custom_data[0]
-        element_type = custom_data[1]
-        element_category = custom_data[2]  # 'node' or 'link'
-        
-        # Update session state only if it's a new selection
-        if not st.session_state.current_element or st.session_state.current_element['name'] != element_name:
-            st.session_state.current_element = {
-                'name': element_name,
-                'category': element_category,
-                'type': element_type
-            }
             
-            if element_category == 'node':
-                st.session_state.selected_nodes = [element_name]
-                st.session_state.selected_links = []
-            else:  # link
-                st.session_state.selected_links = [element_name]
-                st.session_state.selected_nodes = []
+            # Display legends side by side
+            legend_col1, legend_col2 = st.columns(2)
             
-            st.rerun()
-
-with control_col:
-    st.markdown('<h3 class="section-header">🎮 Controls</h3>', unsafe_allow_html=True)
-    
-    # Simulation controls at the top of right panel
-    st.markdown('<h4 class="section-header">⚡ Simulation</h4>', unsafe_allow_html=True)
-    
-    # Status display
-    if sim.initialized_simulation:
-        current_time = datetime.timedelta(seconds=int(st.session_state.current_sim_time))
-        st.success(f"🟢 **Active** | Time: {current_time}")
-    else:
-        st.warning("🟡 **Not Initialized**")
-    
-    # Control buttons
-    sim_col1, sim_col2 = st.columns(2)
-    with sim_col1:
-        if st.button("🚀 Initialize", disabled=sim.initialized_simulation, use_container_width=True):
-            try:
-                with st.spinner("Initializing..."):
-                    sim.init_simulation(global_timestep=HYDRAULIC_TIMESTEP_SECONDS, duration=SIMULATION_DURATION_SECONDS)
-                    st.session_state.current_sim_time = 0
-                st.success("✅ Ready!")
-                time.sleep(1)
-                st.rerun()
-            except Exception as e:
-                st.error(f"❌ Failed: {e}")
-    
-    with sim_col2:
-        step_disabled = not sim.initialized_simulation or sim.is_terminated()
-        if st.button("⏭️ Step", disabled=step_disabled, use_container_width=True):
-            with st.spinner("Processing..."):
-                # Apply scheduled events
-                events_to_apply = [e for e in st.session_state.scheduled_events if e['scheduled_time'] <= st.session_state.current_sim_time]
-                
-                for event in events_to_apply:
-                    success, message = apply_event_to_simulator(sim, wn, event)
-                    if success:
-                        st.session_state.applied_events.append(event)
-                        st.success(f"⚡ {message}")
-                    else:
-                        st.error(f"❌ {message}")
-                    st.session_state.scheduled_events.remove(event)
-                
-                # Run simulation step
-                success, sim_time, message = run_simulation_step(sim, wn)
-                st.session_state.current_sim_time = sim_time
-                
-                if success:
-                    # Collect data
-                    st.session_state.simulation_data['time'].append(sim_time)
-                    
-                    # Sample pressure and flow data for monitored elements
-                    # Get monitored nodes (default to first 5 if not set)
-                    monitored_nodes = st.session_state.get('monitored_nodes', list(wn.node_name_list)[:5])
-                    for node_name in monitored_nodes:
-                        if node_name in wn.node_name_list:  # Ensure node exists
-                            node = wn.get_node(node_name)
-                            if node_name not in st.session_state.simulation_data['pressures']:
-                                st.session_state.simulation_data['pressures'][node_name] = []
-                            pressure = getattr(node, 'pressure', 0) if hasattr(node, 'pressure') else 0
-                            st.session_state.simulation_data['pressures'][node_name].append(pressure)
-                    
-                    # Get monitored links (default to first 5 if not set)
-                    monitored_links = st.session_state.get('monitored_links', list(wn.link_name_list)[:5])
-                    for link_name in monitored_links:
-                        if link_name in wn.link_name_list:  # Ensure link exists
-                            link = wn.get_link(link_name)
-                            if link_name not in st.session_state.simulation_data['flows']:
-                                st.session_state.simulation_data['flows'][link_name] = []
-                            flow = getattr(link, 'flow', 0) if hasattr(link, 'flow') else 0
-                            st.session_state.simulation_data['flows'][link_name].append(flow)
-                    
-                    st.success("✅ Step completed!")
+            with legend_col1:
+                if node_pressures and (min_pressure != max_pressure or min_pressure != 0):
+                    pressure_fig = create_pressure_colorbar(min_pressure, max_pressure)
+                    st.plotly_chart(pressure_fig, use_container_width=True)
                 else:
-                    st.warning(f"⚠️ {message}")
+                    st.info("🔵 **Pressure**: No data yet")
             
-            time.sleep(0.5)
-            st.rerun()
-    
-    # Reset button
-    if st.button("🔄 Reset", use_container_width=True):
-        with st.spinner("Resetting..."):
-            st.session_state.sim = MWNTRInteractiveSimulator(wn)
-            st.session_state.current_sim_time = 0
-            st.session_state.scheduled_events = []
-            st.session_state.applied_events = []
-            st.session_state.simulation_data = {'time': [], 'pressures': {}, 'flows': {}}
-        st.success("🔄 Reset complete!")
-        time.sleep(1)
-        st.rerun()
-    
-    st.markdown("---")
-    
-    # Element configuration section
-    st.markdown('<h4 class="section-header">🎯 Element Configuration</h4>', unsafe_allow_html=True)
-    
-    # Display selected element and event interface
-    if st.session_state.current_element:
-        element = st.session_state.current_element
+            with legend_col2:
+                if link_flows and (min_flow != max_flow or min_flow != 0):
+                    flow_fig = create_flow_colorbar(min_flow, max_flow)
+                    st.plotly_chart(flow_fig, use_container_width=True)
+                else:
+                    st.info("🔗 **Flow**: No data yet")
+
+    # Process click events from the network plot
+    if chart_data and chart_data.get('selection') and chart_data['selection']['points']:
+        selected_point = chart_data['selection']['points'][0]
         
-        # Selected element display
-        st.success(f"**Selected:** {element['name']}")
-        st.info(f"**Type:** {element['type']} ({element['category']})")
+        if selected_point.get('customdata'):
+            custom_data = selected_point['customdata']
+            element_name = custom_data[0]
+            element_type = custom_data[1]
+            element_category = custom_data[2]  # 'node' or 'link'
+            
+            # Update session state only if it's a new selection
+            if not st.session_state.current_element or st.session_state.current_element['name'] != element_name:
+                st.session_state.current_element = {
+                    'name': element_name,
+                    'category': element_category,
+                    'type': element_type
+                }
+                
+                if element_category == 'node':
+                    st.session_state.selected_nodes = [element_name]
+                    st.session_state.selected_links = []
+                else:  # link
+                    st.session_state.selected_links = [element_name]
+                    st.session_state.selected_nodes = []
+                
+                st.rerun()
+
+    with control_col:
+        st.markdown('<h3 class="section-header">🎮 Controls</h3>', unsafe_allow_html=True)
         
-        # Deselect button
-        if st.button("❌ Deselect", use_container_width=True):
-            st.session_state.selected_nodes = []
-            st.session_state.selected_links = []
-            st.session_state.current_element = None
-            st.rerun()
+        # Simulation controls at the top of right panel
+        st.markdown('<h4 class="section-header">⚡ Simulation</h4>', unsafe_allow_html=True)
         
-        # Compact event interface
-        st.markdown("**⚡ Quick Events:**")
-        new_event = display_event_interface(element['name'], element['type'], element['category'])
-        if new_event:
-            st.session_state.scheduled_events.append(new_event)
-            st.success(f"✅ Event scheduled!")
+        # Status display
+        if sim.initialized_simulation:
+            current_time = datetime.timedelta(seconds=int(st.session_state.current_sim_time))
+            st.success(f"🟢 **Active** | Time: {current_time}")
+        else:
+            st.warning("🟡 **Not Initialized**")
+        
+        # Control buttons
+        sim_col1, sim_col2 = st.columns(2)
+        with sim_col1:
+            if st.button("🚀 Initialize", disabled=sim.initialized_simulation, use_container_width=True):
+                try:
+                    with st.spinner("Initializing..."):
+                        sim.init_simulation(global_timestep=HYDRAULIC_TIMESTEP_SECONDS, duration=SIMULATION_DURATION_SECONDS)
+                        st.session_state.current_sim_time = 0
+                    st.success("✅ Ready!")
+                    time.sleep(1)
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"❌ Failed: {e}")
+        
+        with sim_col2:
+            step_disabled = not sim.initialized_simulation or sim.is_terminated()
+            if st.button("⏭️ Step", disabled=step_disabled, use_container_width=True):
+                with st.spinner("Processing..."):
+                    # Apply scheduled events
+                    events_to_apply = [e for e in st.session_state.scheduled_events if e['scheduled_time'] <= st.session_state.current_sim_time]
+                    
+                    for event in events_to_apply:
+                        success, message = apply_event_to_simulator(sim, wn, event)
+                        if success:
+                            st.session_state.applied_events.append(event)
+                            st.success(f"⚡ {message}")
+                        else:
+                            st.error(f"❌ {message}")
+                        st.session_state.scheduled_events.remove(event)
+                    
+                    # Run simulation step
+                    success, sim_time, message = run_simulation_step(sim, wn)
+                    st.session_state.current_sim_time = sim_time
+                    
+                    if success:
+                        # Collect data
+                        st.session_state.simulation_data['time'].append(sim_time)
+                        
+                        # Sample pressure and flow data for monitored elements
+                        # Get monitored nodes (default to first 5 if not set)
+                        monitored_nodes = st.session_state.get('monitored_nodes', list(wn.node_name_list)[:5])
+                        for node_name in monitored_nodes:
+                            if node_name in wn.node_name_list:  # Ensure node exists
+                                node = wn.get_node(node_name)
+                                if node_name not in st.session_state.simulation_data['pressures']:
+                                    st.session_state.simulation_data['pressures'][node_name] = []
+                                pressure = getattr(node, 'pressure', 0) if hasattr(node, 'pressure') else 0
+                                st.session_state.simulation_data['pressures'][node_name].append(pressure)
+                        
+                        # Get monitored links (default to first 5 if not set)
+                        monitored_links = st.session_state.get('monitored_links', list(wn.link_name_list)[:5])
+                        for link_name in monitored_links:
+                            if link_name in wn.link_name_list:  # Ensure link exists
+                                link = wn.get_link(link_name)
+                                if link_name not in st.session_state.simulation_data['flows']:
+                                    st.session_state.simulation_data['flows'][link_name] = []
+                                flow = getattr(link, 'flow', 0) if hasattr(link, 'flow') else 0
+                                st.session_state.simulation_data['flows'][link_name].append(flow)
+                        
+                        st.success("✅ Step completed!")
+                    else:
+                        st.warning(f"⚠️ {message}")
+                
+                time.sleep(0.5)
+                st.rerun()
+        
+        # Reset button
+        if st.button("🔄 Reset", use_container_width=True):
+            with st.spinner("Resetting..."):
+                st.session_state.sim = MWNTRInteractiveSimulator(wn)
+                st.session_state.current_sim_time = 0
+                st.session_state.scheduled_events = []
+                st.session_state.applied_events = []
+                st.session_state.simulation_data = {'time': [], 'pressures': {}, 'flows': {}}
+            st.success("🔄 Reset complete!")
             time.sleep(1)
             st.rerun()
-    
-    else:
-        st.info("👆 **Select an element** from the network map to configure events")
         
-        # Alternative selection for backup
-        with st.expander("🔍 Manual Selection", expanded=False):
-            node_options = ["None"] + list(wn.node_name_list)
-            selected_node = st.selectbox("Node:", node_options, key="node_selector")
+        st.markdown("---")
+        
+        # Element configuration section
+        st.markdown('<h4 class="section-header">🎯 Element Configuration</h4>', unsafe_allow_html=True)
+        
+        # Display selected element and event interface
+        if st.session_state.current_element:
+            element = st.session_state.current_element
             
-            link_options = ["None"] + list(wn.link_name_list)
-            selected_link = st.selectbox("Link:", link_options, key="link_selector")
+            # Selected element display
+            st.success(f"**Selected:** {element['name']}")
+            st.info(f"**Type:** {element['type']} ({element['category']})")
             
-            if selected_node != "None":
-                st.session_state.current_element = {
-                    'name': selected_node,
-                    'category': 'node',
-                    'type': wn.get_node(selected_node).node_type
-                }
-                st.session_state.selected_nodes = [selected_node]
-                st.session_state.selected_links = []
-                st.rerun()
-                
-            if selected_link != "None":
-                st.session_state.current_element = {
-                    'name': selected_link,
-                    'category': 'link',
-                    'type': wn.get_link(selected_link).link_type
-                }
-                st.session_state.selected_links = [selected_link]
+            # Deselect button
+            if st.button("❌ Deselect", use_container_width=True):
                 st.session_state.selected_nodes = []
+                st.session_state.selected_links = []
+                st.session_state.current_element = None
                 st.rerun()
+            
+            # Compact event interface
+            st.markdown("**⚡ Quick Events:**")
+            new_event = display_event_interface(element['name'], element['type'], element['category'])
+            if new_event:
+                st.session_state.scheduled_events.append(new_event)
+                st.success(f"✅ Event scheduled!")
+                time.sleep(1)
+                st.rerun()
+        
+        else:
+            st.info("👆 **Select an element** from the network map to configure events")
+            
+            # Alternative selection for backup
+            with st.expander("🔍 Manual Selection", expanded=False):
+                node_options = ["None"] + list(wn.node_name_list)
+                selected_node = st.selectbox("Node:", node_options, key="node_selector")
+                
+                link_options = ["None"] + list(wn.link_name_list)
+                selected_link = st.selectbox("Link:", link_options, key="link_selector")
+                
+                if selected_node != "None":
+                    st.session_state.current_element = {
+                        'name': selected_node,
+                        'category': 'node',
+                        'type': wn.get_node(selected_node).node_type
+                    }
+                    st.session_state.selected_nodes = [selected_node]
+                    st.session_state.selected_links = []
+                    st.rerun()
+                    
+                if selected_link != "None":
+                    st.session_state.current_element = {
+                        'name': selected_link,
+                        'category': 'link',
+                        'type': wn.get_link(selected_link).link_type
+                    }
+                    st.session_state.selected_links = [selected_link]
+                    st.session_state.selected_nodes = []
+                    st.rerun()
+        
+        # Events summary
+        st.markdown("---")
+        st.markdown('<h4 class="section-header">📅 Events</h4>', unsafe_allow_html=True)
+        
+        event_col1, event_col2 = st.columns(2)
+        with event_col1:
+            st.metric("Scheduled", len(st.session_state.scheduled_events))
+        with event_col2:
+            st.metric("Applied", len(st.session_state.applied_events))
+        
+        # Quick event list
+        if st.session_state.scheduled_events:
+            with st.expander("⏰ Upcoming Events", expanded=False):
+                for event in st.session_state.scheduled_events[-3:]:  # Show last 3
+                    st.write(f"- {event['event_type']} → {event['element_name']}")
+        
+        if st.session_state.applied_events:
+            with st.expander("✅ Recent Events", expanded=False):
+                for event in st.session_state.applied_events[-3:]:  # Show last 3
+                    st.write(f"- {event['event_type']} → {event['element_name']}")
+
+        # Results Visualization for Interactive Mode
+        if len(st.session_state.simulation_data['time']) > 1:
+            with st.container():
+                st.markdown('<h3 class="section-header">📊 Simulation Results</h3>', unsafe_allow_html=True)
+                
+                # Selection controls for monitoring different elements
+                monitoring_col1, monitoring_col2 = st.columns(2)
+                
+                with monitoring_col1:
+                    st.markdown("**📍 Select Nodes to Monitor:**")
+                    available_nodes = list(wn.node_name_list)
+                    if 'monitored_nodes' not in st.session_state:
+                        st.session_state.monitored_nodes = available_nodes[:5]  # Default first 5
+                    
+                    monitored_nodes = st.multiselect(
+                        "Choose nodes for pressure monitoring:",
+                        available_nodes,
+                        default=st.session_state.monitored_nodes,
+                        key="pressure_monitoring_nodes"
+                    )
+                    st.session_state.monitored_nodes = monitored_nodes
+                
+                with monitoring_col2:
+                    st.markdown("**🔗 Select Links to Monitor:**")
+                    available_links = list(wn.link_name_list)
+                    if 'monitored_links' not in st.session_state:
+                        st.session_state.monitored_links = available_links[:5]  # Default first 5
+                    
+                    monitored_links = st.multiselect(
+                        "Choose links for flow monitoring:",
+                        available_links,
+                        default=st.session_state.monitored_links,
+                        key="flow_monitoring_links"
+                    )
+                    st.session_state.monitored_links = monitored_links
+                
+                # Create separate pressure and flow charts side by side
+                pressure_data = st.session_state.simulation_data['pressures']
+                flow_data = st.session_state.simulation_data['flows']
+                
+                chart_col1, chart_col2 = st.columns(2)
+                
+                # Pressure chart
+                with chart_col1:
+                    if pressure_data and monitored_nodes:
+                        filtered_pressure_data = {node: pressure_data[node] for node in monitored_nodes if node in pressure_data}
+                        if filtered_pressure_data:
+                            fig_pressure = go.Figure()
+                            for node_name, pressure_values in filtered_pressure_data.items():
+                                fig_pressure.add_trace(go.Scatter(
+                                    x=st.session_state.simulation_data['time'],
+                                    y=pressure_values,
+                                    mode='lines+markers',
+                                    name=node_name,
+                                    line=dict(width=3),
+                                    marker=dict(size=6)
+                                ))
+                            
+                            fig_pressure.update_layout(
+                                title="🔵 Node Pressure Over Time",
+                                xaxis_title="Time (s)",
+                                yaxis_title="Pressure (m)",
+                                height=400,
+                                hovermode='x unified'
+                            )
+                            
+                            st.plotly_chart(fig_pressure, use_container_width=True)
+                        else:
+                            st.info("📍 No pressure data available for selected nodes")
+                    else:
+                        st.info("📍 Select nodes above to see pressure monitoring")
+                
+                # Flow chart
+                with chart_col2:
+                    if flow_data and monitored_links:
+                        filtered_flow_data = {link: flow_data[link] for link in monitored_links if link in flow_data}
+                        if filtered_flow_data:
+                            fig_flow = go.Figure()
+                            for link_name, flow_values in filtered_flow_data.items():
+                                fig_flow.add_trace(go.Scatter(
+                                    x=st.session_state.simulation_data['time'],
+                                    y=flow_values,
+                                    mode='lines+markers',
+                                    name=link_name,
+                                    line=dict(width=3),
+                                    marker=dict(size=6)
+                                ))
+                            
+                            fig_flow.update_layout(
+                                title="🔗 Link Flow Over Time",
+                                xaxis_title="Time (s)",
+                                yaxis_title="Flow Rate (m³/s)",
+                                height=400,
+                                hovermode='x unified'
+                            )
+                            
+                            st.plotly_chart(fig_flow, use_container_width=True)
+                        else:
+                            st.info("🔗 No flow data available for selected links")
+                    else:
+                        st.info("🔗 Select links above to see flow monitoring")
+                
+                # Current values display for monitored elements
+                if st.session_state.current_sim_time > 0:
+                    st.markdown('<h4 class="section-header">📈 Current Values for Monitored Elements</h4>', unsafe_allow_html=True)
+                    
+                    current_col1, current_col2 = st.columns(2)
+                    
+                    with current_col1:
+                        if monitored_nodes:
+                            st.write("**Current Node Pressures:**")
+                            for node_name in monitored_nodes[:6]:  # Show max 6 for space
+                                if node_name in wn.node_name_list:
+                                    node = wn.get_node(node_name)
+                                    pressure = getattr(node, 'pressure', 0) if hasattr(node, 'pressure') else 0
+                                    st.metric(f"{node_name}", f"{pressure:.2f} m", delta=None)
+                        else:
+                            st.info("📍 No nodes selected for monitoring")
+                    
+                    with current_col2:
+                        if monitored_links:
+                            st.write("**Current Link Flow Rates:**")
+                            for link_name in monitored_links[:6]:  # Show max 6 for space
+                                if link_name in wn.link_name_list:
+                                    link = wn.get_link(link_name)
+                                    flow = getattr(link, 'flow', 0) if hasattr(link, 'flow') else 0
+                                    st.metric(f"{link_name}", f"{flow:.4f} m³/s", delta=None)
+                        else:
+                            st.info("🔗 No links selected for monitoring")
+
+with tab2:
+    # Batch simulator content
+    st.markdown('<h3 class="section-header">📋 Batch Event Simulator</h3>', unsafe_allow_html=True)
     
-    # Events summary
-    st.markdown("---")
-    st.markdown('<h4 class="section-header">📅 Events</h4>', unsafe_allow_html=True)
+    # Import batch simulator functions
+    from batch_simulator_functions import (
+        load_events_from_json, display_event_timeline, 
+        apply_event_to_batch_simulator, get_pending_events
+    )
     
-    event_col1, event_col2 = st.columns(2)
-    with event_col1:
-        st.metric("Scheduled", len(st.session_state.scheduled_events))
-    with event_col2:
-        st.metric("Applied", len(st.session_state.applied_events))
+    batch_wn = st.session_state.batch_wn
+    batch_sim = st.session_state.batch_sim
     
-    # Quick event list
-    if st.session_state.scheduled_events:
-        with st.expander("⏰ Upcoming Events", expanded=False):
-            for event in st.session_state.scheduled_events[-3:]:  # Show last 3
-                st.write(f"- {event['event_type']} → {event['element_name']}")
+    # File upload section
+    st.markdown('<h4 class="section-header">📁 Load Event Scenario</h4>', unsafe_allow_html=True)
     
-    if st.session_state.applied_events:
-        with st.expander("✅ Recent Events", expanded=False):
-            for event in st.session_state.applied_events[-3:]:  # Show last 3
-                st.write(f"- {event['event_type']} → {event['element_name']}")
+    uploaded_file = st.file_uploader(
+        "Choose a JSON file with event history",
+        type=['json'],
+        help="Upload a JSON file generated by event_generator.py or similar format"
+    )
+    
+    if uploaded_file is not None:
+        events, metadata = load_events_from_json(uploaded_file)
+        if events:
+            st.session_state.loaded_events = events
+            st.session_state.event_metadata = metadata
+            st.success(f"✅ Loaded {len(events)} events from file!")
+            
+            # Display metadata
+            if metadata:
+                meta_col1, meta_col2, meta_col3 = st.columns(3)
+                with meta_col1:
+                    st.metric("Total Events", metadata.get('total_events', len(events)))
+                with meta_col2:
+                    duration_hours = metadata.get('duration_seconds', 0) / 3600
+                    st.metric("Duration", f"{duration_hours:.1f} hours")
+                with meta_col3:
+                    st.metric("Event Types", len(metadata.get('event_types', [])))
+                
+                # Show event types
+                if 'event_types' in metadata:
+                    st.info(f"**Event Types:** {', '.join(metadata['event_types'])}")
+    
+    # Batch simulation controls
+    if st.session_state.loaded_events:
+        st.markdown('<h4 class="section-header">🎮 Batch Simulation Controls</h4>', unsafe_allow_html=True)
+        
+        # Status display
+        if batch_sim.initialized_simulation:
+            current_time = datetime.timedelta(seconds=int(st.session_state.batch_current_sim_time))
+            st.success(f"🟢 **Active** | Time: {current_time}")
+            
+            # Show pending events
+            pending_events = [e for e in st.session_state.loaded_events if e['time'] <= st.session_state.batch_current_sim_time and not e.get('applied', False)]
+            if pending_events:
+                st.warning(f"⏳ {len(pending_events)} events pending execution")
+        else:
+            st.warning("🟡 **Not Initialized**")
+        
+        # Control buttons
+        batch_col1, batch_col2, batch_col3 = st.columns(3)
+        
+        with batch_col1:
+            if st.button("🚀 Initialize Batch", disabled=batch_sim.initialized_simulation, use_container_width=True):
+                try:
+                    with st.spinner("Initializing batch simulation..."):
+                        max_time = max([e['time'] for e in st.session_state.loaded_events])
+                        batch_sim.init_simulation(global_timestep=60, duration=max_time + 3600)
+                        st.session_state.batch_current_sim_time = 0
+                        # Reset applied flags
+                        for event in st.session_state.loaded_events:
+                            event['applied'] = False
+                    st.success("✅ Batch simulation ready!")
+                    time.sleep(1)
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"❌ Failed: {e}")
+        
+        with batch_col2:
+            step_disabled = not batch_sim.initialized_simulation or batch_sim.is_terminated()
+            if st.button("⏭️ Step Batch", disabled=step_disabled, use_container_width=True):
+                with st.spinner("Processing batch step..."):
+                    # Apply pending events
+                    pending_events = [e for e in st.session_state.loaded_events 
+                                    if e['time'] <= st.session_state.batch_current_sim_time and not e.get('applied', False)]
+                    
+                    applied_in_this_step = []
+                    for event in pending_events:
+                        success, message = apply_event_to_batch_simulator(batch_sim, batch_wn, event)
+                        if success:
+                            event['applied'] = True
+                            # Only add to applied events if not already there
+                            if event not in st.session_state.batch_applied_events:
+                                st.session_state.batch_applied_events.append(event)
+                                applied_in_this_step.append(f"⚡ {message}")
+                        else:
+                            applied_in_this_step.append(f"❌ {message}")
+                    
+                    # Run simulation step
+                    if not batch_sim.is_terminated():
+                        batch_sim.step_sim()
+                        st.session_state.batch_current_sim_time = batch_sim.get_sim_time()
+                        
+                        # Collect data
+                        st.session_state.batch_simulation_data['time'].append(st.session_state.batch_current_sim_time)
+                        
+                        # Sample data for batch monitoring
+                        batch_monitored_nodes = list(batch_wn.node_name_list)[:5]
+                        for node_name in batch_monitored_nodes:
+                            node = batch_wn.get_node(node_name)
+                            if node_name not in st.session_state.batch_simulation_data['pressures']:
+                                st.session_state.batch_simulation_data['pressures'][node_name] = []
+                            pressure = getattr(node, 'pressure', 0) if hasattr(node, 'pressure') else 0
+                            st.session_state.batch_simulation_data['pressures'][node_name].append(pressure)
+                        
+                        batch_monitored_links = list(batch_wn.link_name_list)[:5]
+                        for link_name in batch_monitored_links:
+                            link = batch_wn.get_link(link_name)
+                            if link_name not in st.session_state.batch_simulation_data['flows']:
+                                st.session_state.batch_simulation_data['flows'][link_name] = []
+                            flow = getattr(link, 'flow', 0) if hasattr(link, 'flow') else 0
+                            st.session_state.batch_simulation_data['flows'][link_name].append(flow)
+                        
+                        # Show results without success messages that trigger reruns
+                        if applied_in_this_step:
+                            st.info(f"Applied {len(applied_in_this_step)} events in this step")
+                        else:
+                            st.info("✅ Batch step completed - no new events")
+                    else:
+                        st.warning("⚠️ Batch simulation completed")
+                
+                # Remove the rerun to prevent duplicate processing
+                # st.rerun()
+        
+        with batch_col3:
+            if st.button("🔄 Reset Batch", use_container_width=True):
+                with st.spinner("Resetting batch simulation..."):
+                    st.session_state.batch_sim = MWNTRInteractiveSimulator(batch_wn)
+                    st.session_state.batch_current_sim_time = 0
+                    st.session_state.batch_applied_events = []
+                    st.session_state.batch_simulation_data = {'time': [], 'pressures': {}, 'flows': {}}
+                    # Reset applied flags
+                    for event in st.session_state.loaded_events:
+                        event['applied'] = False
+                st.success("🔄 Batch reset complete!")
+                time.sleep(1)
+                st.rerun()
+        
+        # Event timeline
+        st.markdown('<h4 class="section-header">📊 Event Timeline</h4>', unsafe_allow_html=True)
+        display_event_timeline(st.session_state.loaded_events, st.session_state.batch_current_sim_time)
+        
+        # Network visualization and results
+        st.markdown('<h4 class="section-header">🗺️ Batch Network Visualization & Results</h4>', unsafe_allow_html=True)
+        
+        # Info about batch mode being read-only
+        st.info("📖 **Batch Mode Info**: The network is in read-only mode. Events are loaded from the JSON file and applied automatically during simulation steps. No manual interaction with network elements is needed.")
+        
+        # Show live visualization toggle
+        show_batch_sim_data = st.toggle(
+            "🌊 Live Batch Visualization", 
+            value=batch_sim.initialized_simulation,
+            disabled=not batch_sim.initialized_simulation,
+            help="Show real-time pressure and flow data for batch simulation",
+            key="batch_viz_toggle"
+        )
+        
+        # Create network plot for batch simulation
+        batch_fig = create_network_plot(
+            batch_wn,
+            [],  # No selection in batch mode
+            [],
+            show_simulation_data=show_batch_sim_data,
+            sim_initialized=batch_sim.initialized_simulation
+        )
+        
+        st.plotly_chart(batch_fig, use_container_width=True)
+        
+        # Applied Events History
+        if st.session_state.batch_applied_events:
+            st.markdown('<h5 class="section-header">📋 Applied Events History</h5>', unsafe_allow_html=True)
+            
+            # Recent events display
+            recent_events = st.session_state.batch_applied_events[-5:]  # Show last 5
+            for event in reversed(recent_events):
+                event_time = datetime.timedelta(seconds=int(event['time']))
+                st.success(f"✅ **{event_time}** - {event['description']}")
+            
+            # Full history in expandable section
+            with st.expander("📜 Complete Event History", expanded=False):
+                applied_df = pd.DataFrame([
+                    {
+                        'Time (s)': event['time'],
+                        'Time': str(datetime.timedelta(seconds=int(event['time']))),
+                        'Element': event['element_name'],
+                        'Event Type': event['event_type'],
+                        'Description': event['description']
+                    }
+                    for event in st.session_state.batch_applied_events
+                ])
+                st.dataframe(applied_df, use_container_width=True)
+        
+        # Batch simulation results
+        if len(st.session_state.batch_simulation_data['time']) > 1:
+            st.markdown('<h5 class="section-header">📈 Simulation Data</h5>', unsafe_allow_html=True)
+            
+            # Selection controls for monitoring different elements in batch mode
+            batch_monitoring_col1, batch_monitoring_col2 = st.columns(2)
+            
+            with batch_monitoring_col1:
+                st.markdown("**📍 Select Nodes to Monitor:**")
+                available_nodes = list(batch_wn.node_name_list)
+                if 'batch_monitored_nodes' not in st.session_state:
+                    st.session_state.batch_monitored_nodes = available_nodes[:5]  # Default first 5
+                
+                batch_monitored_nodes = st.multiselect(
+                    "Choose nodes for pressure monitoring:",
+                    available_nodes,
+                    default=st.session_state.batch_monitored_nodes,
+                    key="batch_pressure_monitoring_nodes"
+                )
+                st.session_state.batch_monitored_nodes = batch_monitored_nodes
+            
+            with batch_monitoring_col2:
+                st.markdown("**🔗 Select Links to Monitor:**")
+                available_links = list(batch_wn.link_name_list)
+                if 'batch_monitored_links' not in st.session_state:
+                    st.session_state.batch_monitored_links = available_links[:5]  # Default first 5
+                
+                batch_monitored_links = st.multiselect(
+                    "Choose links for flow monitoring:",
+                    available_links,
+                    default=st.session_state.batch_monitored_links,
+                    key="batch_flow_monitoring_links"
+                )
+                st.session_state.batch_monitored_links = batch_monitored_links
+            
+            batch_pressure_data = st.session_state.batch_simulation_data['pressures']
+            batch_flow_data = st.session_state.batch_simulation_data['flows']
+            
+            batch_chart_col1, batch_chart_col2 = st.columns(2)
+            
+            # Batch pressure chart
+            with batch_chart_col1:
+                if batch_pressure_data and batch_monitored_nodes:
+                    # Filter data based on selected nodes
+                    filtered_batch_pressure_data = {node: batch_pressure_data[node] for node in batch_monitored_nodes if node in batch_pressure_data}
+                    if filtered_batch_pressure_data:
+                        fig_batch_pressure = go.Figure()
+                        for node_name, pressure_values in filtered_batch_pressure_data.items():
+                            fig_batch_pressure.add_trace(go.Scatter(
+                                x=st.session_state.batch_simulation_data['time'],
+                                y=pressure_values,
+                                mode='lines+markers',
+                                name=node_name,
+                                line=dict(width=3),
+                                marker=dict(size=6)
+                            ))
+                        
+                        fig_batch_pressure.update_layout(
+                            title="🔵 Batch - Node Pressure Over Time",
+                            xaxis_title="Time (s)",
+                            yaxis_title="Pressure (m)",
+                            height=400,
+                            hovermode='x unified'
+                        )
+                        
+                        st.plotly_chart(fig_batch_pressure, use_container_width=True)
+                    else:
+                        st.info("📍 No pressure data available for selected nodes")
+                else:
+                    st.info("📍 Select nodes above to see pressure monitoring")
+            
+            # Batch flow chart
+            with batch_chart_col2:
+                if batch_flow_data and batch_monitored_links:
+                    # Filter data based on selected links
+                    filtered_batch_flow_data = {link: batch_flow_data[link] for link in batch_monitored_links if link in batch_flow_data}
+                    if filtered_batch_flow_data:
+                        fig_batch_flow = go.Figure()
+                        for link_name, flow_values in filtered_batch_flow_data.items():
+                            fig_batch_flow.add_trace(go.Scatter(
+                                x=st.session_state.batch_simulation_data['time'],
+                                y=flow_values,
+                                mode='lines+markers',
+                                name=link_name,
+                                line=dict(width=3),
+                                marker=dict(size=6)
+                            ))
+                        
+                        fig_batch_flow.update_layout(
+                            title="🔗 Batch - Link Flow Over Time",
+                            xaxis_title="Time (s)",
+                            yaxis_title="Flow Rate (m³/s)",
+                            height=400,
+                            hovermode='x unified'
+                        )
+                        
+                        st.plotly_chart(fig_batch_flow, use_container_width=True)
+                    else:
+                        st.info("🔗 No flow data available for selected links")
+                else:
+                    st.info("🔗 Select links above to see flow monitoring")
+            
+            # Current values display for monitored elements in batch mode
+            if st.session_state.batch_current_sim_time > 0:
+                st.markdown('<h6 class="section-header">📈 Current Values for Monitored Elements</h6>', unsafe_allow_html=True)
+                
+                batch_current_col1, batch_current_col2 = st.columns(2)
+                
+                with batch_current_col1:
+                    if batch_monitored_nodes:
+                        st.write("**Current Node Pressures:**")
+                        for node_name in batch_monitored_nodes[:6]:  # Show max 6 for space
+                            if node_name in batch_wn.node_name_list:
+                                node = batch_wn.get_node(node_name)
+                                pressure = getattr(node, 'pressure', 0) if hasattr(node, 'pressure') else 0
+                                st.metric(f"{node_name}", f"{pressure:.2f} m", delta=None)
+                    else:
+                        st.info("📍 No nodes selected for monitoring")
+                
+                with batch_current_col2:
+                    if batch_monitored_links:
+                        st.write("**Current Link Flow Rates:**")
+                        for link_name in batch_monitored_links[:6]:  # Show max 6 for space
+                            if link_name in batch_wn.link_name_list:
+                                link = batch_wn.get_link(link_name)
+                                flow = getattr(link, 'flow', 0) if hasattr(link, 'flow') else 0
+                                st.metric(f"{link_name}", f"{flow:.4f} m³/s", delta=None)
+                    else:
+                        st.info("🔗 No links selected for monitoring")
+
+    else:
+        st.info("👆 **Upload a JSON event file** to start batch simulation")
+        
+        # Show example format
+        with st.expander("📋 Example Event Format", expanded=False):
+            st.markdown("""
+            **Expected JSON format:**
+            ```json
+            {
+                "metadata": {
+                    "generated_at": "2024-01-01 12:00:00",
+                    "total_events": 10,
+                    "duration_seconds": 3600
+                },
+                "events": [
+                    {
+                        "time": 300,
+                        "element_name": "J1",
+                        "element_type": "Junction",
+                        "element_category": "node",
+                        "event_type": "start_leak",
+                        "parameters": {
+                            "leak_area": 0.01,
+                            "leak_discharge_coefficient": 0.75
+                        },
+                        "description": "Leak started on J1"
+                    }
+                ]
+            }
+            ```
+            """)
 
 # Footer
-st.markdown("---")
-
-# Results Visualization (moved to bottom for better workflow)
-if len(st.session_state.simulation_data['time']) > 1:
-    with st.container():
-        st.markdown('<h3 class="section-header">📊 Simulation Results</h3>', unsafe_allow_html=True)
-        
-        # Selection controls for monitoring different elements
-        monitoring_col1, monitoring_col2 = st.columns(2)
-        
-        with monitoring_col1:
-            st.markdown("**📍 Select Nodes to Monitor:**")
-            available_nodes = list(wn.node_name_list)
-            if 'monitored_nodes' not in st.session_state:
-                st.session_state.monitored_nodes = available_nodes[:5]  # Default first 5
-            
-            monitored_nodes = st.multiselect(
-                "Choose nodes for pressure monitoring:",
-                available_nodes,
-                default=st.session_state.monitored_nodes,
-                key="pressure_monitoring_nodes"
-            )
-            st.session_state.monitored_nodes = monitored_nodes
-        
-        with monitoring_col2:
-            st.markdown("**🔗 Select Links to Monitor:**")
-            available_links = list(wn.link_name_list)
-            if 'monitored_links' not in st.session_state:
-                st.session_state.monitored_links = available_links[:5]  # Default first 5
-            
-            monitored_links = st.multiselect(
-                "Choose links for flow monitoring:",
-                available_links,
-                default=st.session_state.monitored_links,
-                key="flow_monitoring_links"
-            )
-            st.session_state.monitored_links = monitored_links
-        
-        # Create separate pressure and flow charts side by side
-        pressure_data = st.session_state.simulation_data['pressures']
-        flow_data = st.session_state.simulation_data['flows']
-        
-        chart_col1, chart_col2 = st.columns(2)
-        
-        # Pressure chart
-        with chart_col1:
-            if pressure_data and monitored_nodes:
-                filtered_pressure_data = {node: pressure_data[node] for node in monitored_nodes if node in pressure_data}
-                if filtered_pressure_data:
-                    fig_pressure = go.Figure()
-                    for node_name, pressure_values in filtered_pressure_data.items():
-                        fig_pressure.add_trace(go.Scatter(
-                            x=st.session_state.simulation_data['time'],
-                            y=pressure_values,
-                            mode='lines+markers',
-                            name=node_name,
-                            line=dict(width=3),
-                            marker=dict(size=6)
-                        ))
-                    
-                    fig_pressure.update_layout(
-                        title="🔵 Node Pressure Over Time",
-                        xaxis_title="Time (s)",
-                        yaxis_title="Pressure (m)",
-                        height=400,
-                        hovermode='x unified'
-                    )
-                    
-                    st.plotly_chart(fig_pressure, use_container_width=True)
-                else:
-                    st.info("📍 No pressure data available for selected nodes")
-            else:
-                st.info("📍 Select nodes above to see pressure monitoring")
-        
-        # Flow chart
-        with chart_col2:
-            if flow_data and monitored_links:
-                filtered_flow_data = {link: flow_data[link] for link in monitored_links if link in flow_data}
-                if filtered_flow_data:
-                    fig_flow = go.Figure()
-                    for link_name, flow_values in filtered_flow_data.items():
-                        fig_flow.add_trace(go.Scatter(
-                            x=st.session_state.simulation_data['time'],
-                            y=flow_values,
-                            mode='lines+markers',
-                            name=link_name,
-                            line=dict(width=3),
-                            marker=dict(size=6)
-                        ))
-                    
-                    fig_flow.update_layout(
-                        title="🔗 Link Flow Over Time",
-                        xaxis_title="Time (s)",
-                        yaxis_title="Flow Rate (m³/s)",
-                        height=400,
-                        hovermode='x unified'
-                    )
-                    
-                    st.plotly_chart(fig_flow, use_container_width=True)
-                else:
-                    st.info("🔗 No flow data available for selected links")
-            else:
-                st.info("🔗 Select links above to see flow monitoring")
-        
-        # Current values display for monitored elements
-        if st.session_state.current_sim_time > 0:
-            st.markdown('<h4 class="section-header">📈 Current Values for Monitored Elements</h4>', unsafe_allow_html=True)
-            
-            current_col1, current_col2 = st.columns(2)
-            
-            with current_col1:
-                if monitored_nodes:
-                    st.write("**Current Node Pressures:**")
-                    for node_name in monitored_nodes[:6]:  # Show max 6 for space
-                        if node_name in wn.node_name_list:
-                            node = wn.get_node(node_name)
-                            pressure = getattr(node, 'pressure', 0) if hasattr(node, 'pressure') else 0
-                            st.metric(f"{node_name}", f"{pressure:.2f} m", delta=None)
-                else:
-                    st.info("📍 No nodes selected for monitoring")
-            
-            with current_col2:
-                if monitored_links:
-                    st.write("**Current Link Flow Rates:**")
-                    for link_name in monitored_links[:6]:  # Show max 6 for space
-                        if link_name in wn.link_name_list:
-                            link = wn.get_link(link_name)
-                            flow = getattr(link, 'flow', 0) if hasattr(link, 'flow') else 0
-                            st.metric(f"{link_name}", f"{flow:.4f} m³/s", delta=None)
-                else:
-                    st.info("🔗 No links selected for monitoring")
-
 st.markdown("---")
 st.caption(f"Interactive Network Simulator | Network: {INP_FILE} | Duration: {SIMULATION_DURATION_SECONDS//3600}h") 
