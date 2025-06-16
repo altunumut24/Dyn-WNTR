@@ -49,9 +49,19 @@ def apply_event_to_simulator(sim: MWNTRInteractiveSimulator, wn: WaterNetworkMod
             elif event_type == 'stop_leak':
                 sim.stop_leak(node)
             elif event_type == 'add_demand':
-                sim.add_demand(node, **parameters)
+                base_demand = parameters.get('base_demand', 0.0)
+                pattern_name = parameters.get('pattern_name', None)
+                category = parameters.get('category', None)
+                
+                if pattern_name is None and category is not None:
+                    pattern_name = category
+                    if pattern_name not in wn.pattern_name_list:
+                        wn.add_pattern(pattern_name, [1.0])
+                
+                sim.add_demand(node, base_demand, name=pattern_name, category=category)
             elif event_type == 'remove_demand':
-                sim.remove_demand(node, **parameters)
+                name = parameters.get('name', None)
+                sim.remove_demand(node, name=name)
             elif event_type == 'add_fire_fighting_demand':
                 sim.add_fire_fighting_demand(node, **parameters)
             elif event_type == 'set_tank_head':
