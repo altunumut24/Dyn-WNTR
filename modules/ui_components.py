@@ -1,6 +1,29 @@
 """
 UI Components for Interactive Network Simulator.
-Contains reusable Streamlit interface components and functions.
+
+This module contains all the reusable Streamlit interface components that make up
+the user interface. It's organized as a collection of functions that create
+specific UI elements like buttons, forms, displays, and controls.
+
+Key responsibilities:
+- Creating consistent UI components across the application
+- Handling user input and form validation
+- Displaying network information and simulation status
+- Managing event configuration interfaces
+- Providing monitoring and control panels
+
+UI Component categories:
+1. Status displays (network info, simulation status)
+2. Control panels (simulation controls, event configuration)
+3. Data displays (current values, event history)
+4. Input forms (event parameters, monitoring selection)
+5. Utility components (legends, help text, file upload)
+
+Design principles:
+- Each component is self-contained and reusable
+- Components return data rather than modifying global state
+- Consistent styling using Streamlit's built-in components
+- Clear labeling and help text for user guidance
 """
 
 import streamlit as st
@@ -8,61 +31,119 @@ import datetime
 import pandas as pd
 from typing import List, Dict, Any, Optional
 
+# Import WNTR components
 from mwntr.network import WaterNetworkModel
 from mwntr.sim.interactive_network_simulator import MWNTRInteractiveSimulator
+
+# Import our configuration and simulation functions
 from .config import NODE_EVENTS, LINK_EVENTS, DEFAULT_MONITORED_NODES_COUNT, DEFAULT_MONITORED_LINKS_COUNT
 from .simulation import get_available_events, create_event
 
 
 def display_network_status(wn: WaterNetworkModel, current_element: Optional[Dict], 
                           scheduled_events: List[Dict], applied_events: List[Dict]):
-    """Display network status dashboard."""
+    """
+    Display the network status dashboard with key metrics.
+    
+    This component shows an overview of the network and current simulation state
+    in a clean, metrics-based layout. It provides quick insights into:
+    - Network size (nodes and links)
+    - Current selection state
+    - Event status (scheduled vs applied)
+    
+    Args:
+        wn (WaterNetworkModel): The loaded water network model
+        current_element (Optional[Dict]): Currently selected element info
+        scheduled_events (List[Dict]): Events waiting to be applied
+        applied_events (List[Dict]): Events that have been applied
+        
+    Interface design:
+    - Creates the top status bar with key metrics
+    - Provides quick overview without cluttering the interface
+    - Delta values show additional context (like element type)
+    - Helps users understand current state at a glance
+    """
     st.markdown('<h3 class="section-header">📊 Network Status</h3>', unsafe_allow_html=True)
+    
+    # Create four columns for different metrics
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
+        # Show total number of nodes in the network
         st.metric("Total Nodes", len(wn.node_name_list), help="Junction, Tank, and Reservoir nodes")
+        
     with col2:
+        # Show total number of links in the network
         st.metric("Total Links", len(wn.link_name_list), help="Pipes, Pumps, and Valves")
+        
     with col3:
+        # Show currently selected element (if any)
         if current_element:
             st.metric("Selected Element", current_element['name'], 
                      delta=current_element['type'], delta_color="normal")
         else:
             st.metric("Selected Element", "None", help="Click on network elements to select")
+            
     with col4:
+        # Show event status (scheduled events with applied events as delta)
         st.metric("Scheduled Events", len(scheduled_events), 
                  delta=len(applied_events), delta_color="normal")
 
+    # Add visual separator
     st.markdown("---")
 
 
 def display_simulation_controls(sim: MWNTRInteractiveSimulator, current_sim_time: float, key_prefix: str = "") -> str:
-    """Display simulation control buttons and status. Returns action taken."""
+    """
+    Display simulation control buttons and status indicator.
+    
+    This component provides the main simulation controls that allow users to:
+    - Initialize the simulation with current settings
+    - Step through simulation one time step at a time
+    - Reset simulation back to initial state
+    
+    Args:
+        sim (MWNTRInteractiveSimulator): The WNTR simulator instance
+        current_sim_time (float): Current simulation time in seconds
+        key_prefix (str): Prefix for button keys (for multiple instances)
+        
+    Returns:
+        str: Action taken by user ("initialize", "step", "reset", or None)
+        
+    Control logic:
+    - Creates the main simulation control panel
+    - Button states change based on simulation status
+    - Returns the action so main app can handle the simulation logic
+    - Status indicator shows current simulation state
+    """
     st.markdown('<h4 class="section-header">⚡ Simulation</h4>', unsafe_allow_html=True)
     
-    # Status display
+    # Display current simulation status
     if sim.initialized_simulation:
+        # Simulation is active - show current time
         current_time = datetime.timedelta(seconds=int(current_sim_time))
         st.success(f"🟢 **Active** | Time: {current_time}")
     else:
+        # Simulation not started yet
         st.warning("🟡 **Not Initialized**")
     
-    # Control buttons
+    # Create control button layout
     sim_col1, sim_col2 = st.columns(2)
     
-    action = None
+    action = None  # Track which action user took
     
     with sim_col1:
+        # Initialize button - disabled if already initialized
         if st.button("🚀 Initialize", disabled=sim.initialized_simulation, use_container_width=True, key=f"{key_prefix}initialize"):
             action = "initialize"
     
     with sim_col2:
+        # Step button - disabled if not initialized or simulation ended
         step_disabled = not sim.initialized_simulation or sim.is_terminated()
         if st.button("⏭️ Step", disabled=step_disabled, use_container_width=True, key=f"{key_prefix}step"):
             action = "step"
     
-    # Reset button
+    # Reset button - always available to start over
     if st.button("🔄 Reset", use_container_width=True, key=f"{key_prefix}reset"):
         action = "reset"
     
@@ -70,15 +151,34 @@ def display_simulation_controls(sim: MWNTRInteractiveSimulator, current_sim_time
 
 
 def display_element_properties(wn: WaterNetworkModel, element_name: str, element_type: str):
-    """Display properties of selected element."""
+    """
+    Display detailed properties of the selected network element.
+    
+    This component shows technical details about the currently selected
+    element, including both static properties (from the network model)
+    and dynamic properties (from the current simulation state).
+    
+    Args:
+        wn (WaterNetworkModel): The water network model
+        element_name (str): Name/ID of the selected element
+        element_type (str): Type of element (Junction, Tank, Reservoir, Pipe, etc.)
+        
+    Display features:
+    - Creates the detailed info panel when elements are selected
+    - Shows both design parameters and current simulation values
+    - Helps users understand element characteristics and current state
+    - Different properties shown for nodes vs links
+    """
     st.markdown(f"**Element Details:**")
     
     try:
         if element_type in ['Junction', 'Tank', 'Reservoir']:
+            # Handle node elements (junctions, tanks, reservoirs)
             element = wn.get_node(element_name)
             coords = element.coordinates
             st.write(f"- **Coordinates:** ({coords[0]:.2f}, {coords[1]:.2f})")
             
+            # Show node-specific properties
             if hasattr(element, 'base_demand'):
                 st.write(f"- **Base Demand:** {element.base_demand:.4f} m³/s")
             if hasattr(element, 'elevation'):
@@ -86,11 +186,12 @@ def display_element_properties(wn: WaterNetworkModel, element_name: str, element
             if hasattr(element, 'pressure') and element.pressure is not None:
                 st.write(f"- **Current Pressure:** {element.pressure:.2f} m")
                 
-        else:  # Link
+        else:  # Handle link elements (pipes, pumps, valves)
             element = wn.get_link(element_name)
             st.write(f"- **Start Node:** {element.start_node_name}")
             st.write(f"- **End Node:** {element.end_node_name}")
             
+            # Show link-specific properties
             if hasattr(element, 'length'):
                 st.write(f"- **Length:** {element.length:.2f} m")
             if hasattr(element, 'diameter'):

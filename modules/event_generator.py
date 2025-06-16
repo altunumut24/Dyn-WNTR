@@ -1,3 +1,31 @@
+"""
+Event Generator for Interactive Network Simulator.
+
+This module provides functionality to automatically generate realistic water network
+events for testing and demonstration purposes. It creates random events that simulate
+real-world scenarios like pipe breaks, demand changes, equipment failures, etc.
+
+Key responsibilities:
+- Generating random but realistic network events
+- Managing event timing and probability distributions
+- Tracking active events to avoid conflicts
+- Saving/loading event sequences to/from JSON files
+- Providing variety in event types and parameters
+
+Event types generated:
+1. Leak events (start/stop leaks on nodes)
+2. Demand events (add/remove additional demands)
+3. Pipe events (close/open pipes)
+4. Pump events (start/stop/speed change pumps)
+5. Valve events (open/close valves)
+
+The generator maintains state to ensure:
+- Events don't conflict (e.g., can't start leak where one exists)
+- Realistic timing and probability distributions
+- Proper cleanup (stopping events that were started)
+- Balanced mix of different event types
+"""
+
 import random
 import json
 import time
@@ -7,22 +35,45 @@ from mwntr.sim.interactive_network_simulator import MWNTRInteractiveSimulator
 
 def generate_random_events(wn: mwntr.network.WaterNetworkModel, duration_seconds: int, 
                           timestep_seconds: int, event_probability: float = 0.05) -> List[Dict[str, Any]]:
-    """Generate random events for simulation and return them as a list."""
+    """
+    Generate random events for simulation testing and demonstration.
+    
+    This function creates a realistic sequence of water network events over a
+    specified time period. Events are generated with controlled randomness to
+    simulate real-world scenarios while maintaining system stability.
+    
+    Args:
+        wn (WaterNetworkModel): The water network model to generate events for
+        duration_seconds (int): Total simulation duration in seconds
+        timestep_seconds (int): Simulation timestep in seconds
+        event_probability (float): Probability of event occurring at each timestep (0.05 = 5%)
+        
+    Returns:
+        List[Dict[str, Any]]: List of event dictionaries ready for simulation
+        
+    Event generation strategy:
+    - 30% leak events (realistic failure rates)
+    - 20% demand events (usage pattern changes)
+    - 20% pipe events (maintenance, failures)
+    - 15% pump events (equipment issues)
+    - 15% valve events (operational changes)
+    """
     
     events: List[Dict[str, Any]] = []
     
-    # Initialize simulator to get network info
+    # Initialize simulator to get network information
     sim = MWNTRInteractiveSimulator(wn)
     sim.init_simulation(duration=duration_seconds, global_timestep=timestep_seconds)
     
-    # Track active states
-    has_active_leak: List[str] = []
-    has_active_demand: List[str] = []
-    closed_pipes: List[str] = []
-    closed_pumps: List[str] = []
-    closed_valves: List[str] = []
+    # Track active event states to prevent conflicts
+    # This ensures we don't create impossible scenarios
+    has_active_leak: List[str] = []      # Nodes with active leaks
+    has_active_demand: List[str] = []    # Nodes with additional demands
+    closed_pipes: List[str] = []         # Currently closed pipes
+    closed_pumps: List[str] = []         # Currently stopped pumps
+    closed_valves: List[str] = []        # Currently closed valves
     
-    # Get available nodes and links
+    # Extract available network elements for event generation
     node_list = wn.junction_name_list + wn.tank_name_list + wn.reservoir_name_list
     junction_list = wn.junction_name_list
     tank_list = wn.tank_name_list if hasattr(wn, 'tank_name_list') else []

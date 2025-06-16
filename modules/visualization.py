@@ -1,6 +1,26 @@
 """
 Visualization functions for Interactive Network Simulator.
-Contains all plotting, color mapping, and network visualization functions.
+
+This module handles all the visual aspects of the water network simulation:
+- Interactive network maps with clickable elements
+- Color-coded pressure and flow visualization
+- Time-series monitoring charts
+- Event timeline displays
+- Color scale legends
+
+Key responsibilities:
+- Converting network data into visual representations
+- Mapping pressure/flow values to colors
+- Creating interactive Plotly charts
+- Handling user clicks on network elements
+- Displaying simulation results over time
+
+The main visualization flow:
+1. Extract network layout (node positions, connections)
+2. Map simulation data to colors (pressure → node colors, flow → pipe colors)
+3. Create interactive Plotly figures
+4. Handle user clicks for element selection
+5. Display time-series data in monitoring charts
 """
 
 import plotly.graph_objects as go
@@ -12,10 +32,12 @@ import streamlit as st
 import json
 import datetime
 
+# Import WNTR network components
 from mwntr.network import WaterNetworkModel, Node, Link, LinkStatus
 from mwntr.network.elements import Junction, Tank, Reservoir, Pipe, Pump, Valve
 from mwntr.graphics.network import plot_interactive_network
 
+# Import our configuration constants
 from .config import (
     PRESSURE_COLOR_RANGES, FLOW_COLOR_RANGES, 
     CHART_HEIGHT, LEGEND_HEIGHT, TIMELINE_HEIGHT,
@@ -24,74 +46,129 @@ from .config import (
 
 
 def get_network_layout(wn: WaterNetworkModel):
-    """Extract network layout information for plotting."""
-    # Get node positions
+    """
+    Extract network layout information for plotting.
+    
+    This function processes the water network model to extract the spatial
+    layout information needed for visualization. It organizes nodes and links
+    with their positions and properties.
+    
+    Args:
+        wn (WaterNetworkModel): The WNTR water network model
+        
+    Returns:
+        Tuple containing:
+        - node_positions: Dict mapping node names to (x, y) coordinates
+        - edge_list: List of (start_node, end_node) tuples
+        - node_info: Dict with node properties (type, position)
+        - edge_info: Dict with link properties (start, end, type, midpoint)
+        
+    Technical details:
+    - Converts WNTR network data into plotting-friendly format
+    - Node coordinates determine where elements appear on the map
+    - Edge info is used to draw pipes/links between nodes
+    - Midpoints are used for placing link labels and click detection
+    """
+    # Extract node positions from the network model
     node_positions = {}
     for node_name, node in wn.nodes():
         if node.coordinates is not None:
+            # Use actual coordinates from the INP file
             node_positions[node_name] = node.coordinates
         else:
             # Generate random positions if coordinates not available
+            # This is a fallback for networks without spatial data
             node_positions[node_name] = (np.random.random(), np.random.random())
     
-    # Get edge list
+    # Build edge list and detailed edge information
     edge_list = []
     edge_info = {}
     for link_name, link in wn.links():
+        # Get start and end positions for this link
         start_pos = node_positions[link.start_node_name]
         end_pos = node_positions[link.end_node_name]
+        
+        # Add to simple edge list (for basic connectivity)
         edge_list.append((link.start_node_name, link.end_node_name))
+        
+        # Store detailed information for visualization
         edge_info[link_name] = {
-            'start': link.start_node_name,
-            'end': link.end_node_name,
-            'type': link.link_type,
-            'mid_pos': ((start_pos[0] + end_pos[0])/2, (start_pos[1] + end_pos[1])/2)
+            'start': link.start_node_name,           # Starting node name
+            'end': link.end_node_name,               # Ending node name
+            'type': link.link_type,                  # Pipe, Pump, or Valve
+            'mid_pos': ((start_pos[0] + end_pos[0])/2, (start_pos[1] + end_pos[1])/2)  # Midpoint for labels
         }
     
-    # Get node info
+    # Organize node information for visualization
     node_info = {}
     for node_name, node in wn.nodes():
         node_info[node_name] = {
-            'type': node.node_type,
-            'pos': node_positions[node_name]
+            'type': node.node_type,              # Junction, Tank, or Reservoir
+            'pos': node_positions[node_name]     # (x, y) coordinates
         }
     
     return node_positions, edge_list, node_info, edge_info
 
 
 def get_pressure_color(pressure, min_pressure, max_pressure):
-    """Generate color based on pressure value using viridis-like yellow to purple mapping."""
+    """
+    Generate color based on pressure value using viridis-like color mapping.
+    
+    This function maps pressure values to colors for node visualization.
+    Higher pressures get "warmer" colors (yellow), lower pressures get
+    "cooler" colors (purple/blue).
+    
+    Args:
+        pressure (float): The pressure value to map
+        min_pressure (float): Minimum pressure in the dataset
+        max_pressure (float): Maximum pressure in the dataset
+        
+    Returns:
+        str: RGB color string (e.g., 'rgb(253, 231, 37)')
+        
+    Color mapping:
+    - Yellow = high pressure (good), Purple = low pressure (concerning)
+    - The color scale helps identify pressure problems visually
+    - Uses viridis color scheme which is colorblind-friendly
+    """
+    # Handle edge case where all pressures are the same
     if max_pressure == min_pressure:
         return 'rgb(253, 231, 37)'  # Default yellow
     
+    # Normalize pressure to 0-1 range
     normalized = (pressure - min_pressure) / (max_pressure - min_pressure)
-    normalized = max(0, min(1, normalized))
+    normalized = max(0, min(1, normalized))  # Clamp to valid range
     
-    # Viridis-like color mapping: yellow -> green -> blue -> purple
+    # Viridis-like color mapping: yellow → green → blue → purple
+    # This creates a smooth color transition across pressure ranges
+    
     if normalized < 0.25:
-        # Yellow to green
-        t = normalized * 4
-        r = int(253 - (253 - 68) * t)
-        g = int(231 - (231 - 1) * t)
-        b = int(37 + (84 - 37) * t)
+        # Yellow to green transition (high to medium-high pressure)
+        t = normalized * 4  # Scale to 0-1 within this segment
+        r = int(253 - (253 - 68) * t)   # Red: 253 → 68
+        g = int(231 - (231 - 1) * t)    # Green: 231 → 1
+        b = int(37 + (84 - 37) * t)     # Blue: 37 → 84
+        
     elif normalized < 0.5:
-        # Green to teal
+        # Green to teal transition (medium-high to medium pressure)
         t = (normalized - 0.25) * 4
-        r = int(68 - (68 - 33) * t)
-        g = int(1 + (144 - 1) * t)
-        b = int(84 + (140 - 84) * t)
+        r = int(68 - (68 - 33) * t)     # Red: 68 → 33
+        g = int(1 + (144 - 1) * t)      # Green: 1 → 144
+        b = int(84 + (140 - 84) * t)    # Blue: 84 → 140
+        
     elif normalized < 0.75:
-        # Teal to blue
+        # Teal to blue transition (medium to medium-low pressure)
         t = (normalized - 0.5) * 4
-        r = int(33 - (33 - 59) * t)
-        g = int(144 - (144 - 82) * t)
-        b = int(140 + (139 - 140) * t)
+        r = int(33 - (33 - 59) * t)     # Red: 33 → 59
+        g = int(144 - (144 - 82) * t)   # Green: 144 → 82
+        b = int(140 + (139 - 140) * t)  # Blue: 140 → 139
+        
     else:
-        # Blue to purple
+        # Blue to purple transition (medium-low to low pressure)
         t = (normalized - 0.75) * 4
-        r = int(59 + (68 - 59) * t)
-        g = int(82 - (82 - 1) * t)
-        b = int(139 + (84 - 139) * t)
+        r = int(59 + (68 - 59) * t)     # Red: 59 → 68
+        g = int(82 - (82 - 1) * t)      # Green: 82 → 1
+        b = int(139 + (84 - 139) * t)   # Blue: 139 → 84
     
     return f'rgb({r}, {g}, {b})'
 

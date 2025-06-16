@@ -1,6 +1,24 @@
 """
 Interactive Water Network Event Simulator - Main Application
-A Streamlit-based application for interactive water network simulation with event scheduling.
+
+This is the main Streamlit application file that orchestrates the entire
+water network simulation interface. It brings together all the modules
+to create a cohesive user experience.
+
+Key responsibilities:
+- Setting up the Streamlit page configuration and layout
+- Managing session state for the application
+- Coordinating between different modules (simulation, visualization, UI)
+- Handling user interactions and navigation
+- Managing both interactive and batch simulation modes
+
+Architecture overview:
+1. Page setup and configuration
+2. Session state initialization
+3. Network model loading
+4. Tab-based navigation (Interactive vs Batch mode)
+5. Event handling and simulation control
+6. Results visualization and analysis
 """
 
 import streamlit as st
@@ -76,92 +94,158 @@ st.markdown("""
 
 
 def initialize_session_state():
-    """Initialize all session state variables."""
-    # Interactive mode state
+    """
+    Initialize all Streamlit session state variables.
+    
+    Session state in Streamlit persists data between user interactions
+    and page reruns. This function sets up all the variables we need
+    to track throughout the application lifecycle.
+    
+    State categories:
+    - Network models: The loaded water network data
+    - Simulation engines: WNTR simulator instances
+    - UI selections: What elements user has selected
+    - Events: Scheduled and applied events
+    - Data: Time-series data for charts
+    """
+    # Interactive mode state variables
     session_vars = {
-        'wn': None,
-        'sim': None,
-        'selected_nodes': [],
-        'selected_links': [],
-        'current_element': None,
-        'scheduled_events': [],
-        'applied_events': [],
-        'current_sim_time': 0,
-        'simulation_data': initialize_simulation_data(),
+        # Core network and simulation objects
+        'wn': None,                              # Water network model (interactive mode)
+        'sim': None,                             # WNTR simulator instance (interactive mode)
         
-        # Batch mode state  
-        'batch_wn': None,
-        'batch_sim': None,
-        'loaded_events': [],
-        'event_metadata': {},
-        'batch_current_sim_time': 0,
-        'batch_scheduled_events': [],
-        'batch_applied_events': [],
-        'batch_simulation_data': initialize_simulation_data()
+        # User interface selections
+        'selected_nodes': [],                    # Currently selected nodes on map
+        'selected_links': [],                    # Currently selected links on map
+        'current_element': None,                 # Currently focused element for events
+        
+        # Event management
+        'scheduled_events': [],                  # Events waiting to be applied
+        'applied_events': [],                    # Events that have been applied
+        'current_sim_time': 0,                   # Current simulation time (seconds)
+        'simulation_data': initialize_simulation_data(),  # Time-series data for charts
+        
+        # Batch mode state (separate from interactive mode)
+        'batch_wn': None,                        # Water network model (batch mode)
+        'batch_sim': None,                       # WNTR simulator instance (batch mode)
+        'loaded_events': [],                     # Events loaded from JSON file
+        'event_metadata': {},                    # Metadata from JSON file
+        'batch_current_sim_time': 0,             # Current simulation time (batch mode)
+        'batch_scheduled_events': [],            # Events waiting to be applied (batch)
+        'batch_applied_events': [],              # Events that have been applied (batch)
+        'batch_simulation_data': initialize_simulation_data()  # Time-series data (batch)
     }
     
+    # Initialize each variable if it doesn't exist yet
     for var, default_value in session_vars.items():
         if var not in st.session_state:
             st.session_state[var] = default_value
 
 
 def load_network_models():
-    """Load network models for both interactive and batch modes."""
+    """
+    Load water network models for both interactive and batch modes.
+    
+    This function handles the initial loading of the water network from
+    the INP file and creates simulator instances for both modes.
+    
+    Process:
+    1. Check if network is already loaded
+    2. Load network from INP file using WNTR
+    3. Create simulator instances for both modes
+    4. Show success message to user
+    """
+    # Only load if not already loaded (avoid reloading on every interaction)
     if st.session_state.wn is None:
         with st.spinner("🔄 Loading network model..."):
-            # Load for interactive mode
+            # Load network model for interactive mode
             st.session_state.wn = load_network_model(INP_FILE)
+            
             if st.session_state.wn:
+                # Import the WNTR simulator class
                 from mwntr.sim.interactive_network_simulator import MWNTRInteractiveSimulator
+                
+                # Create simulator instance for interactive mode
                 st.session_state.sim = MWNTRInteractiveSimulator(st.session_state.wn)
                 
-                # Also load for batch mode
+                # Also load a separate copy for batch mode
+                # (This prevents interference between the two modes)
                 st.session_state.batch_wn = load_network_model(INP_FILE)
                 if st.session_state.batch_wn:
                     st.session_state.batch_sim = MWNTRInteractiveSimulator(st.session_state.batch_wn)
                 
+                # Show success message to user
                 st.success(f"✅ Network '{INP_FILE}' loaded successfully!")
-                time.sleep(1)
+                time.sleep(1)  # Brief pause to show the message
             else:
+                # Loading failed - stop the app
                 st.stop()
 
 
 def handle_simulation_controls(sim, wn, simulation_data, session_prefix=""):
-    """Handle simulation control actions."""
+    """
+    Handle user interactions with simulation control buttons.
+    
+    This function processes the three main simulation actions:
+    - Initialize: Set up the simulation with user-specified parameters
+    - Step: Execute one simulation time step
+    - Reset: Return to initial state
+    
+    Args:
+        sim: The WNTR simulator instance
+        wn: The water network model
+        simulation_data: Dictionary storing time-series data
+        session_prefix: Prefix for session state variables (for batch mode)
+        
+    Control flow:
+    - This is the control center for running simulations
+    - Each action triggers different simulation operations
+    - User feedback is provided through spinners and success messages
+    - st.rerun() refreshes the interface to show updated state
+    """
+    # Display control buttons and get user action
     action = display_simulation_controls(sim, st.session_state[f'{session_prefix}current_sim_time'], session_prefix)
     
     if action == "initialize":
+        # Set up simulation with user-specified parameters
         try:
             with st.spinner("Initializing..."):
-                # Use user-provided planning values
+                # Get user-provided planning values from session state
                 duration_seconds = st.session_state.get('simulation_duration_hours', 24) * 3600
                 timestep_seconds = st.session_state.get('simulation_timestep_minutes', 60) * 60
+                
+                # Initialize the WNTR simulator
                 sim.init_simulation(
                     global_timestep=timestep_seconds,
                     duration=duration_seconds
                 )
-                # Remember what this run uses so all progress widgets stay consistent
+                
+                # Store these values for progress tracking consistency
                 st.session_state.run_duration_seconds = duration_seconds
                 st.session_state.run_timestep_seconds = timestep_seconds
                 st.session_state[f'{session_prefix}current_sim_time'] = 0
+                
             st.success("✅ Ready!")
-            time.sleep(1)
-            st.rerun()
+            time.sleep(1)  # Brief pause to show success message
+            st.rerun()     # Refresh interface to show updated state
+            
         except Exception as e:
             st.error(f"❌ Failed: {e}")
     
     elif action == "step":
+        # Execute one simulation time step
         with st.spinner("Processing..."):
             handle_simulation_step(sim, wn, simulation_data, session_prefix)
-        time.sleep(0.5)
-        st.rerun()
+        time.sleep(0.5)  # Brief pause for user feedback
+        st.rerun()       # Refresh interface with new results
     
     elif action == "reset":
+        # Reset simulation to initial state
         with st.spinner("Resetting..."):
             reset_simulation(wn, session_prefix)
         st.success("🔄 Reset complete!")
-        time.sleep(1)
-        st.rerun()
+        time.sleep(1)    # Brief pause to show success message
+        st.rerun()       # Refresh interface to show reset state
 
 
 def handle_simulation_step(sim, wn, simulation_data, session_prefix=""):
@@ -868,27 +952,44 @@ def display_element_configuration_compact(wn):
 
 
 def main():
-    """Main application function."""
+    """
+    Main application function - the entry point of the entire application.
+    
+    This function orchestrates the entire application flow:
+    1. Sets up the page title and debug controls
+    2. Initializes all session state variables
+    3. Loads the water network models
+    4. Creates the tab-based navigation
+    5. Displays the appropriate mode (Interactive or Batch)
+    6. Handles debug information display
+    
+    Application flow:
+    - This is where everything starts when someone visits the web app
+    - Called every time the user interacts with the interface
+    - Streamlit reruns this function on every user interaction
+    - Session state preserves data between these reruns
+    """
+    # Set the main page title
     st.title("🌊 Interactive Water Network Event Simulator")
     
-    # DEBUG TOGGLE - Add this to your sidebar
+    # Add debug toggle in sidebar for troubleshooting
     debug_mode = st.sidebar.toggle("🐛 Debug Mode", value=False, help="Show debugging information")
     
-    # Initialize session state
+    # Initialize all session state variables (only runs once)
     initialize_session_state()
     
-    # Load network models
+    # Load network models from INP file (only runs once)
     load_network_models()
     
-    # Initialize active tab state
+    # Initialize active tab state if not already set
     if 'active_tab' not in st.session_state:
         st.session_state.active_tab = "🎮 Interactive Mode"
     
-    # Create pill-based tabs that maintain state
+    # Create pill-based tabs for navigation between modes
     tabs = ["🎮 Interactive Mode", "📋 Batch Simulator"]
     active_tab = st.pills("", tabs, selection_mode="single", default=st.session_state.active_tab)
     
-    # Update session state when tab changes
+    # Update session state when user switches tabs
     if active_tab != st.session_state.active_tab:
         st.session_state.active_tab = active_tab
     
