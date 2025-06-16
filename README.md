@@ -16,6 +16,7 @@ A powerful web-based tool for simulating water network events and analyzing thei
 - **Dynamic Color Coding**: Pressure and flow visualization with professional color schemes
 - **Monitoring Charts**: Real-time time-series plots for selected elements
 - **Event Timeline**: Visual timeline of scheduled and applied events
+- **Network File Selection**: Choose the default NET_4.inp network or upload a custom EPANET INP file for simulation
 
 ### 📋 Batch Simulation Mode
 - **JSON Event Loading**: Upload predefined event scenarios from JSON files
@@ -96,11 +97,12 @@ streamlit run interactive_network_app.py
 The application will open in your default web browser at `http://localhost:8501`.
 
 ### 2. Interactive Mode
-1. **Explore the Network**: Click on nodes and pipes to see their properties
-2. **Schedule Events**: Select an element and configure an event (leak, closure, etc.)
-3. **Initialize Simulation**: Set duration and time step parameters
-4. **Run Simulation**: Use step-by-step execution to see event impacts
-5. **Monitor Results**: View real-time charts and network visualization
+1. **Select Network File**: Use the Network Configuration panel to choose the default NET_4.inp or upload a custom EPANET INP file.
+2. **Explore the Network**: Click on nodes and pipes to see their properties
+3. **Schedule Events**: Select an element and configure an event (leak, closure, etc.)
+4. **Initialize Simulation**: Set duration and time step parameters
+5. **Run Simulation**: Use step-by-step execution to see event impacts
+6. **Monitor Results**: View real-time charts and network visualization
 
 ### 3. Batch Mode
 1. **Upload Events**: Use a JSON file with predefined event sequences

@@ -113,6 +113,8 @@ def initialize_session_state():
         # Core network and simulation objects
         'wn': None,                              # Water network model (interactive mode)
         'sim': None,                             # WNTR simulator instance (interactive mode)
+        'current_inp_file': INP_FILE,            # Currently selected INP file path
+        'network_loaded': False,                 # Flag to track if network is loaded
         
         # User interface selections
         'selected_nodes': [],                    # Currently selected nodes on map
@@ -142,24 +144,35 @@ def initialize_session_state():
             st.session_state[var] = default_value
 
 
-def load_network_models():
+def load_network_models(inp_file_path: str = None):
     """
     Load water network models for both interactive and batch modes.
     
-    This function handles the initial loading of the water network from
-    the INP file and creates simulator instances for both modes.
+    This function handles the loading of the water network from either
+    the default INP file or a user-uploaded file, and creates simulator
+    instances for both modes.
+    
+    Args:
+        inp_file_path (str): Path to the INP file to load. If None, uses session state value.
     
     Process:
-    1. Check if network is already loaded
+    1. Determine which INP file to load
     2. Load network from INP file using WNTR
     3. Create simulator instances for both modes
-    4. Show success message to user
+    4. Update session state and show success message
     """
-    # Only load if not already loaded (avoid reloading on every interaction)
-    if st.session_state.wn is None:
+    # Determine which file to load
+    if inp_file_path is None:
+        inp_file_path = st.session_state.get('current_inp_file', INP_FILE)
+    
+    # Only load if network is not loaded or if file has changed
+    current_file = st.session_state.get('current_inp_file', INP_FILE)
+    network_loaded = st.session_state.get('network_loaded', False)
+    
+    if not network_loaded or current_file != inp_file_path or st.session_state.wn is None:
         with st.spinner("🔄 Loading network model..."):
             # Load network model for interactive mode
-            st.session_state.wn = load_network_model(INP_FILE)
+            st.session_state.wn = load_network_model(inp_file_path)
             
             if st.session_state.wn:
                 # Import the WNTR simulator class
@@ -170,16 +183,35 @@ def load_network_models():
                 
                 # Also load a separate copy for batch mode
                 # (This prevents interference between the two modes)
-                st.session_state.batch_wn = load_network_model(INP_FILE)
+                st.session_state.batch_wn = load_network_model(inp_file_path)
                 if st.session_state.batch_wn:
                     st.session_state.batch_sim = MWNTRInteractiveSimulator(st.session_state.batch_wn)
                 
+                # Update session state
+                st.session_state.current_inp_file = inp_file_path
+                st.session_state.network_loaded = True
+                
+                # Reset simulation state for new network
+                st.session_state.current_sim_time = 0
+                st.session_state.scheduled_events = []
+                st.session_state.applied_events = []
+                st.session_state.simulation_data = initialize_simulation_data()
+                st.session_state.selected_nodes = []
+                st.session_state.selected_links = []
+                st.session_state.current_element = None
+                
                 # Show success message to user
-                st.success(f"✅ Network '{INP_FILE}' loaded successfully!")
+                import os
+                filename = os.path.basename(inp_file_path)
+                st.success(f"✅ Network '{filename}' loaded successfully!")
                 time.sleep(1)  # Brief pause to show the message
             else:
-                # Loading failed - stop the app
-                st.stop()
+                # Loading failed - reset state
+                st.session_state.network_loaded = False
+                st.error("❌ Failed to load network file. Please check the file format and try again.")
+                return False
+    
+    return True
 
 
 def handle_simulation_controls(sim, wn, simulation_data, session_prefix=""):
@@ -336,10 +368,53 @@ def handle_network_click(chart_data):
                 st.rerun()
 
 
+def handle_network_file_selection():
+    """Handle network file selection and loading."""
+    # Import the new UI component
+    from modules.ui_components import display_network_file_selector
+    
+    # Display file selector
+    selected_file = display_network_file_selector()
+    
+    if selected_file:
+        # Check if this is a different file than currently loaded
+        current_file = st.session_state.get('current_inp_file', INP_FILE)
+        
+        if selected_file != current_file or not st.session_state.get('network_loaded', False):
+            # Load the new network
+            st.session_state.current_inp_file = selected_file
+            st.session_state.network_loaded = False  # Force reload
+            
+            # Load the new network
+            if load_network_models(selected_file):
+                # Don't rerun immediately, let the display continue
+                pass
+            else:
+                # Loading failed, revert to previous file
+                st.session_state.current_inp_file = current_file
+                return False
+        
+        # Ensure network is loaded
+        if not st.session_state.get('network_loaded', False):
+            load_network_models(selected_file)
+    
+    return selected_file is not None
+
+
 def display_interactive_mode():
     """Display the interactive mode tab."""
+    # First, handle network file selection
+    if not handle_network_file_selection():
+        st.info("👆 Please select a network file to begin simulation")
+        return
+    
     wn = st.session_state.wn
     sim = st.session_state.sim
+    
+    # Ensure network is loaded
+    if wn is None or sim is None:
+        st.error("❌ Network not loaded. Please check your INP file.")
+        return
     
     # Network Status Dashboard
     with st.container():
@@ -978,8 +1053,11 @@ def main():
     # Initialize all session state variables (only runs once)
     initialize_session_state()
     
-    # Load network models from INP file (only runs once)
-    load_network_models()
+    # Load default network models for batch mode
+    # In interactive mode, network loading is handled by the file selector
+    active_tab = st.session_state.get('active_tab', "🎮 Interactive Mode")
+    if active_tab == "📋 Batch Simulator" and not st.session_state.get('network_loaded', False):
+        load_network_models()
     
     # Initialize active tab state if not already set
     if 'active_tab' not in st.session_state:

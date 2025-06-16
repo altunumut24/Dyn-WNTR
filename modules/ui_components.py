@@ -519,6 +519,131 @@ def display_example_event_format():
 
 
 def display_footer(inp_file: str, duration_hours: int):
-    """Display application footer."""
+    """Display application footer with current network information."""
+    import os
+    
     st.markdown("---")
-    st.caption(f"Interactive Network Simulator | Network: {inp_file} | Duration: {duration_hours}h") 
+    
+    # Get current network file from session state if available
+    current_file = st.session_state.get('current_inp_file', inp_file)
+    filename = os.path.basename(current_file)
+    
+    st.caption(f"Interactive Network Simulator | Network: {filename} | Duration: {duration_hours}h")
+
+
+def display_network_file_selector() -> Optional[str]:
+    """
+    Display a professional network file selection interface.
+    
+    This component allows users to either use the default network file
+    or upload their own EPANET INP file for simulation.
+    
+    Returns:
+        Optional[str]: Path to the selected INP file, or None if no valid file
+        
+    Interface design:
+    - Shows current default network information
+    - Provides professional file upload option
+    - Validates uploaded files
+    - Handles file naming and storage
+    """
+    st.markdown('<h4 class="section-header">📁 Network Configuration</h4>', unsafe_allow_html=True)
+    
+    # Network file selection options
+    file_option = st.radio(
+        "Network Source:",
+        ["📊 Use Default Network (NET_4.inp)", "📤 Upload Custom Network"],
+        help="Choose to use the default network or upload your own EPANET INP file"
+    )
+    
+    if file_option == "📊 Use Default Network (NET_4.inp)":
+        # Show information about default network
+        with st.expander("ℹ️ Default Network Information", expanded=False):
+            st.info("""
+            **Default Network: NET_4.inp**
+            - Sample water distribution network
+            - Pre-configured for demonstration
+            - Contains junctions, pipes, pumps, and tanks
+            - Suitable for testing and learning
+            """)
+        return "NET_4.inp"
+    
+    else:
+        # Custom file upload
+        st.markdown("**Upload Network File:**")
+        uploaded_file = st.file_uploader(
+            "Choose an EPANET INP file",
+            type=['inp'],
+            help="Upload a valid EPANET 2.0+ INP file for simulation",
+            accept_multiple_files=False
+        )
+        
+        if uploaded_file is not None:
+            # Validate and save the uploaded file
+            try:
+                # Create a temporary filename
+                import tempfile
+                import os
+                
+                # Create temporary file with .inp extension
+                with tempfile.NamedTemporaryFile(mode='w', suffix='.inp', delete=False) as tmp_file:
+                    # Write uploaded content to temporary file
+                    content = uploaded_file.getvalue().decode('utf-8')
+                    tmp_file.write(content)
+                    temp_path = tmp_file.name
+                
+                # Display file information
+                file_size = len(content.encode('utf-8'))
+                st.success(f"✅ **{uploaded_file.name}** uploaded successfully")
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.metric("File Size", f"{file_size:,} bytes")
+                with col2:
+                    st.metric("Format", "EPANET INP")
+                
+                # Show file validation status
+                with st.expander("📋 File Validation", expanded=False):
+                    # Basic validation - check for required sections
+                    validation_results = validate_inp_file_content(content)
+                    
+                    for check, status in validation_results.items():
+                        if status:
+                            st.success(f"✅ {check}")
+                        else:
+                            st.warning(f"⚠️ {check}")
+                
+                return temp_path
+                
+            except Exception as e:
+                st.error(f"❌ Error processing uploaded file: {str(e)}")
+                st.info("Please ensure the file is a valid EPANET INP format.")
+                return None
+        else:
+            st.info("👆 Please upload an EPANET INP file to proceed")
+            return None
+
+
+def validate_inp_file_content(content: str) -> Dict[str, bool]:
+    """
+    Validate basic structure of INP file content.
+    
+    Args:
+        content (str): Content of the INP file
+        
+    Returns:
+        Dict[str, bool]: Validation results for different sections
+    """
+    content_upper = content.upper()
+    
+    validation_results = {
+        "Contains [JUNCTIONS] section": "[JUNCTIONS]" in content_upper,
+        "Contains [PIPES] section": "[PIPES]" in content_upper,
+        "Contains [RESERVOIRS] or [TANKS] section": 
+            "[RESERVOIRS]" in content_upper or "[TANKS]" in content_upper,
+        "Contains [COORDINATES] section": "[COORDINATES]" in content_upper,
+        "File size is reasonable (< 10MB)": len(content.encode('utf-8')) < 10 * 1024 * 1024,
+        "Contains [END] marker": "[END]" in content_upper
+    }
+    
+    return validation_results 
