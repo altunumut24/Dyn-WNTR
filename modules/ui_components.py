@@ -10,8 +10,8 @@ from typing import List, Dict, Any, Optional
 
 from mwntr.network import WaterNetworkModel
 from mwntr.sim.interactive_network_simulator import MWNTRInteractiveSimulator
-from config import NODE_EVENTS, LINK_EVENTS, DEFAULT_MONITORED_NODES_COUNT, DEFAULT_MONITORED_LINKS_COUNT
-from simulation import get_available_events, create_event
+from .config import NODE_EVENTS, LINK_EVENTS, DEFAULT_MONITORED_NODES_COUNT, DEFAULT_MONITORED_LINKS_COUNT
+from .simulation import get_available_events, create_event
 
 
 def display_network_status(wn: WaterNetworkModel, current_element: Optional[Dict], 

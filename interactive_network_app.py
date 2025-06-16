@@ -9,17 +9,18 @@ import datetime
 from typing import Dict, Any
 
 # Import our modularized components
-from config import INP_FILE, SIMULATION_DURATION_SECONDS, HYDRAULIC_TIMESTEP_SECONDS
-from simulation import (
+from modules.config import INP_FILE, SIMULATION_DURATION_SECONDS, HYDRAULIC_TIMESTEP_SECONDS
+from debug_helpers import debug_session_state, debug_network_state, debug_event_processing
+from modules.simulation import (
     load_network_model, apply_event_to_simulator, run_simulation_step,
     load_events_from_json, collect_simulation_data, 
     initialize_simulation_data, reset_simulation_state
 )
-from visualization import (
+from modules.visualization import (
     create_network_plot, create_pressure_colorbar, create_flow_colorbar,
     display_event_timeline, create_monitoring_charts
 )
-from ui_components import (
+from modules.ui_components import (
     display_network_status, display_simulation_controls, display_element_properties,
     display_event_interface, display_monitoring_controls, display_current_values,
     display_events_summary, display_applied_events_history, display_legend,
@@ -870,6 +871,9 @@ def main():
     """Main application function."""
     st.title("🌊 Interactive Water Network Event Simulator")
     
+    # DEBUG TOGGLE - Add this to your sidebar
+    debug_mode = st.sidebar.toggle("🐛 Debug Mode", value=False, help="Show debugging information")
+    
     # Initialize session state
     initialize_session_state()
     
@@ -888,9 +892,50 @@ def main():
     if active_tab != st.session_state.active_tab:
         st.session_state.active_tab = active_tab
     
+    # DEBUG SECTION - Show debugging info if enabled
+    if debug_mode:
+        st.sidebar.markdown("---")
+        st.sidebar.markdown("### 🐛 Debug Info")
+        with st.sidebar.expander("Session State", expanded=True):
+            for key, value in st.session_state.items():
+                st.sidebar.write(f"**{key}:** `{type(value).__name__}`")
+                
+                # Show actual values based on type
+                if isinstance(value, (str, int, float, bool)):
+                    st.sidebar.write(f"  Value: `{value}`")
+                elif isinstance(value, list):
+                    st.sidebar.write(f"  Length: `{len(value)}`")
+                    if len(value) > 0 and len(value) < 5:
+                        st.sidebar.write(f"  Items: `{value}`")
+                    elif len(value) > 0:
+                        st.sidebar.write(f"  First item: `{value[0]}`")
+                elif isinstance(value, dict):
+                    st.sidebar.write(f"  Keys: `{len(value)}`")
+                    if len(value) > 0 and len(value) < 5:
+                        for k, v in value.items():
+                            st.sidebar.write(f"    {k}: `{v}`")
+                elif value is None:
+                    st.sidebar.write(f"  Value: `None`")
+                else:
+                    st.sidebar.write(f"  Object: `{str(value)[:50]}...`")
+                st.sidebar.write("---")
+    
     # Display content based on selected tab
     if st.session_state.active_tab == "🎮 Interactive Mode":
         display_interactive_mode()
+        
+        # Show debug info at bottom if enabled
+        if debug_mode:
+            st.markdown("---")
+            st.markdown("## 🐛 Debug Information")
+            col1, col2 = st.columns(2)
+            with col1:
+                debug_session_state()
+            with col2:
+                if st.session_state.wn and st.session_state.sim:
+                    debug_network_state(st.session_state.wn, st.session_state.sim)
+                debug_event_processing(st.session_state.scheduled_events, st.session_state.current_sim_time)
+                    
     elif st.session_state.active_tab == "📋 Batch Simulator":
         display_batch_mode()
     

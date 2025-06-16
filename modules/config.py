@@ -24,9 +24,6 @@ NODE_EVENTS: Dict[str, Dict[str, Dict[str, Any]]] = {
         'start_leak': {'params': ['leak_area', 'leak_discharge_coefficient'], 'defaults': [0.01, 0.75]},
         'stop_leak': {'params': [], 'defaults': []},
         'set_tank_head': {'params': ['head'], 'defaults': [50.0]}
-    },
-    'Reservoir': {
-        # Reservoirs typically don't have events in this context
     }
 }
 

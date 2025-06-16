@@ -16,7 +16,7 @@ from mwntr.network import WaterNetworkModel, Node, Link, LinkStatus
 from mwntr.network.elements import Junction, Tank, Reservoir, Pipe, Pump, Valve
 from mwntr.graphics.network import plot_interactive_network
 
-from config import (
+from .config import (
     PRESSURE_COLOR_RANGES, FLOW_COLOR_RANGES, 
     CHART_HEIGHT, LEGEND_HEIGHT, TIMELINE_HEIGHT,
     MIN_FLOW_WIDTH, MAX_FLOW_WIDTH
@@ -281,19 +281,39 @@ def create_network_plot(wn: WaterNetworkModel, selected_nodes: List[str] = None,
         
         link_colors.append(color)
     
+    # Add white text shadow for link labels (larger for better visibility)
+    fig.add_trace(go.Scatter(
+        x=link_x,
+        y=link_y,
+        mode='text',
+        text=link_names,
+        textfont=dict(
+            size=14,  # Increased from 10 to 14
+            color='white',
+            family="Arial Black"  # Bold font for shadow
+        ),
+        showlegend=False,
+        hoverinfo='skip'
+    ))
+    
+    # Add main link markers and text
     fig.add_trace(go.Scatter(
         x=link_x,
         y=link_y,
         mode='markers+text',
         marker=dict(
-            size=12,  # Reduced from 18 for better cloud compatibility
+            size=8,   # Reduced marker size to 8 to make text more prominent
             color=link_colors,
-            line=dict(width=1, color='darkblue'),  # Reduced border width
-            symbol=link_symbols
+            line=dict(width=1, color='#34495e'),  # Thinner border
+            symbol=link_symbols,
+            opacity=0.6  # More transparent markers
         ),
         text=link_names,
-        textfont=dict(size=7, color='black', family="Arial"),  # Reduced from 8
-        # CRITICAL: Store name, type, and category in customdata
+        textfont=dict(
+            size=12,  # Increased from 9 to 12
+            color='#1a252f',  # Darker color for better contrast
+            family="Arial Black"  # Bold font for main text
+        ),
         customdata=link_customdata,
         hovertemplate='%{hovertext}<extra></extra>',
         hovertext=link_hover_text,
@@ -369,6 +389,23 @@ def create_network_plot(wn: WaterNetworkModel, selected_nodes: List[str] = None,
         hover_text += "<br>Click to select"
         node_hover_text.append(hover_text)
     
+    # Add white text shadow for better readability
+    fig.add_trace(go.Scatter(
+        x=node_x,
+        y=node_y,
+        mode='text',
+        text=node_names,
+        textposition='top center',
+        textfont=dict(
+            size=13,  # Increased from 12 to 13
+            color='white',
+            family="Arial Black"  # Bold font for shadow
+        ),
+        showlegend=False,
+        hoverinfo='skip'
+    ))
+    
+    # Add main node markers and text
     fig.add_trace(go.Scatter(
         x=node_x,
         y=node_y,
@@ -376,12 +413,16 @@ def create_network_plot(wn: WaterNetworkModel, selected_nodes: List[str] = None,
         marker=dict(
             size=node_sizes, 
             color=node_colors, 
-            line=dict(width=2, color='darkblue'),
+            line=dict(width=2, color='#34495e'),  # Professional dark gray
             symbol=node_symbols
         ),
         text=node_names,
-        textposition='middle center',
-        textfont=dict(size=9, color='white', family="Arial Black"),
+        textposition='top center',
+        textfont=dict(
+            size=12,  # Increased from 11 to 12
+            color='#1a252f',  # Darker color for better contrast
+            family="Arial Black"  # Bold font for main text
+        ),
         # CRITICAL: Store name, type, and category in customdata
         customdata=node_customdata,
         hovertemplate='%{hovertext}<extra></extra>',

@@ -10,7 +10,7 @@ import streamlit as st
 
 from mwntr.sim.interactive_network_simulator import MWNTRInteractiveSimulator
 from mwntr.network import WaterNetworkModel
-from config import (
+from .config import (
     INP_FILE, SIMULATION_DURATION_SECONDS, 
     HYDRAULIC_TIMESTEP_SECONDS, REPORT_TIMESTEP_SECONDS,
     NODE_EVENTS, LINK_EVENTS
