@@ -50,6 +50,11 @@ st.markdown("""
         width: 100% !important;
     }
     
+    /* Optimize plotly text rendering for different DPI settings */
+    .plotly .main-svg {
+        font-family: "Arial", sans-serif;
+    }
+    
     /* Optimize column spacing */
     .element-container {
         margin-bottom: 0.5rem;
@@ -59,6 +64,11 @@ st.markdown("""
     .section-header {
         margin-bottom: 0.5rem !important;
         margin-top: 0.5rem !important;
+    }
+    
+    /* Optimize for cloud deployment rendering */
+    .stSelectbox > div > div {
+        font-size: 0.9rem;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -630,7 +640,8 @@ def display_batch_mode():
                 [],
                 show_simulation_data=show_batch_sim_data,
                 sim_initialized=batch_sim.initialized_simulation,
-                height=800  # Default height for batch mode
+                height=800,  # Default height for batch mode
+                node_size_scale=0.8  # Smaller nodes for batch mode
             )
             
             st.plotly_chart(batch_fig, use_container_width=True)
@@ -689,7 +700,7 @@ def display_network_map_section(wn, sim):
     st.info("🖱️ **Click on nodes (circles) or links (squares) to select and configure events**")
     
     # Visualization controls
-    viz_col1, viz_col2, viz_col3 = st.columns([1, 1, 1])
+    viz_col1, viz_col2, viz_col3, viz_col4 = st.columns([1, 1, 1, 1])
     with viz_col1:
         show_sim_data = st.toggle(
             "🌊 Live Visualization", 
@@ -705,15 +716,23 @@ def display_network_map_section(wn, sim):
                                 options=[700, 800, 900, 1000, 1200], 
                                 index=2, 
                                 help="Adjust map height")
+    with viz_col4:
+        # Node size control for different screen resolutions
+        node_size_scale = st.selectbox("🔘 Node Size", 
+                                     options=[0.6, 0.8, 1.0, 1.2, 1.4], 
+                                     index=2, 
+                                     format_func=lambda x: f"{int(x*100)}%",
+                                     help="Adjust node size for your screen")
     
-    # Network plot with dynamic height
+    # Network plot with dynamic height and node size
     fig = create_network_plot(
         wn, 
         st.session_state.selected_nodes, 
         st.session_state.selected_links,
         show_simulation_data=show_sim_data,
         sim_initialized=sim.initialized_simulation,
-        height=map_height
+        height=map_height,
+        node_size_scale=node_size_scale
     )
     
     # Display plot with click handling
@@ -757,7 +776,12 @@ def display_fullscreen_network_map(wn, sim):
                                 help="Adjust map height",
                                 key="fullscreen_map_height")
     with viz_col4:
-        st.write("")  # Spacer
+        node_size_scale = st.selectbox("🔘 Node Size", 
+                                     options=[0.6, 0.8, 1.0, 1.2, 1.4], 
+                                     index=2, 
+                                     format_func=lambda x: f"{int(x*100)}%",
+                                     help="Adjust node size for your screen",
+                                     key="fullscreen_node_size")
     
     # Network plot in fullscreen
     fig = create_network_plot(
@@ -766,7 +790,8 @@ def display_fullscreen_network_map(wn, sim):
         st.session_state.selected_links,
         show_simulation_data=show_sim_data,
         sim_initialized=sim.initialized_simulation,
-        height=map_height
+        height=map_height,
+        node_size_scale=node_size_scale
     )
     
     # Display plot with click handling

@@ -144,7 +144,7 @@ def get_flow_color_and_width(flow, min_flow, max_flow):
 
 
 def create_network_plot(wn: WaterNetworkModel, selected_nodes: List[str] = None, selected_links: List[str] = None, 
-                        show_simulation_data: bool = False, sim_initialized: bool = False, height: int = 900):
+                        show_simulation_data: bool = False, sim_initialized: bool = False, height: int = 900, node_size_scale: float = 1.0):
     """Create interactive plotly network visualization with click handling and optional simulation data overlay."""
     node_positions, edge_list, node_info, edge_info = get_network_layout(wn)
     
@@ -286,13 +286,13 @@ def create_network_plot(wn: WaterNetworkModel, selected_nodes: List[str] = None,
         y=link_y,
         mode='markers+text',
         marker=dict(
-            size=18,  # Increased from 14 for better visibility
+            size=12,  # Reduced from 18 for better cloud compatibility
             color=link_colors,
-            line=dict(width=2, color='darkblue'),  # Increased border width
+            line=dict(width=1, color='darkblue'),  # Reduced border width
             symbol=link_symbols
         ),
         text=link_names,
-        textfont=dict(size=8, color='black', family="Arial"),  # Increased from 6
+        textfont=dict(size=7, color='black', family="Arial"),  # Reduced from 8
         # CRITICAL: Store name, type, and category in customdata
         customdata=link_customdata,
         hovertemplate='%{hovertext}<extra></extra>',
@@ -330,26 +330,26 @@ def create_network_plot(wn: WaterNetworkModel, selected_nodes: List[str] = None,
         # Store name, type, and category as customdata for click detection
         node_customdata.append([node_name, info['type'], 'node'])
         
-        # Professional symbols and sizes for different node types (increased for better visibility)
+        # Professional symbols and sizes for different node types (optimized for cloud deployments)
         if info['type'] == 'Junction':
             symbol = 'circle'
-            size = 25  # Increased from 20
+            size = 16  # Reduced from 25 for better cloud compatibility
             default_color = 'lightblue'
         elif info['type'] == 'Tank':
             symbol = 'square'
-            size = 30  # Increased from 24
+            size = 20  # Reduced from 30 for better cloud compatibility
             default_color = 'navy'
         elif info['type'] == 'Reservoir':
             symbol = 'hexagon'
-            size = 28  # Increased from 22
+            size = 18  # Reduced from 28 for better cloud compatibility
             default_color = 'darkgreen'
         else:
             symbol = 'circle'
-            size = 23  # Increased from 18
+            size = 14  # Reduced from 23 for better cloud compatibility
             default_color = 'gray'
         
         node_symbols.append(symbol)
-        node_sizes.append(size)
+        node_sizes.append(size * node_size_scale)
         
         # Determine color based on simulation data or defaults
         if node_name in selected_nodes:
