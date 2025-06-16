@@ -602,7 +602,7 @@ def display_simulation_planning():
     
     with plan_col1:
         duration_hours = st.number_input(
-            "Simulation Duration (hours)",
+            "Duration (hours)",
             min_value=1,
             max_value=168,  # 1 week max
             value=st.session_state.simulation_duration_hours,
