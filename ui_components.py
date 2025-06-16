@@ -278,11 +278,27 @@ def display_events_summary(scheduled_events: List[Dict], applied_events: List[Di
     with event_col2:
         st.metric("Applied", len(applied_events))
     
-    # Quick event list
+    # Upcoming events with ability to remove
     if scheduled_events:
         with st.expander("⏰ Upcoming Events", expanded=False):
-            for event in scheduled_events[-3:]:  # Show last 3
-                st.write(f"- {event['event_type']} → {event['element_name']}")
+            # Show up to 5 upcoming events (last added first)
+            for idx, event in enumerate(reversed(scheduled_events[-5:])):
+                col_desc, col_btn = st.columns([4, 1])
+                with col_desc:
+                    st.write(f"- {event['event_type']} → {event['element_name']}")
+                with col_btn:
+                    # Unique key per button so Streamlit keeps state correctly
+                    if st.button("🗑️ Remove", key=f"remove_evt_{event.get('time', idx)}_{idx}"):
+                        # Remove the event from the original list held in session_state
+                        try:
+                            scheduled_events.remove(event)
+                            st.experimental_rerun()
+                        except ValueError:
+                            pass
+            st.markdown("---")
+            if st.button("🧹 Clear All Pending", key="clear_all_events"):
+                scheduled_events.clear()
+                st.experimental_rerun()
     
     if applied_events:
         with st.expander("✅ Recent Events", expanded=False):

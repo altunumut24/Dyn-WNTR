@@ -94,10 +94,16 @@ def handle_simulation_controls(sim, wn, simulation_data, session_prefix=""):
     if action == "initialize":
         try:
             with st.spinner("Initializing..."):
+                # Use user-provided planning values
+                duration_seconds = st.session_state.get('simulation_duration_hours', 24) * 3600
+                timestep_seconds = st.session_state.get('simulation_timestep_minutes', 60) * 60
                 sim.init_simulation(
-                    global_timestep=HYDRAULIC_TIMESTEP_SECONDS, 
-                    duration=SIMULATION_DURATION_SECONDS
+                    global_timestep=timestep_seconds,
+                    duration=duration_seconds
                 )
+                # Remember what this run uses so all progress widgets stay consistent
+                st.session_state.run_duration_seconds = duration_seconds
+                st.session_state.run_timestep_seconds = timestep_seconds
                 st.session_state[f'{session_prefix}current_sim_time'] = 0
             st.success("✅ Ready!")
             time.sleep(1)
@@ -300,8 +306,6 @@ def display_interactive_mode():
 
 def display_color_legends(wn):
     """Display color scale legends for pressure and flow."""
-    st.markdown('<h4 class="section-header">🎨 Color Scales</h4>', unsafe_allow_html=True)
-    
     # Get current data for legends
     node_pressures = {}
     link_flows = {}
@@ -329,7 +333,7 @@ def display_color_legends(wn):
             min_pressure = max_pressure = 0
     else:
         min_pressure = max_pressure = 0
-        
+    
     if link_flows:
         flow_values = [float(f) for f in link_flows.values() if f is not None]
         if flow_values:
@@ -341,14 +345,12 @@ def display_color_legends(wn):
     
     # Display legends side by side
     legend_col1, legend_col2 = st.columns(2)
-    
     with legend_col1:
         if min_pressure != max_pressure or min_pressure != 0:
             pressure_fig = create_pressure_colorbar(min_pressure, max_pressure)
             st.plotly_chart(pressure_fig, use_container_width=True)
         else:
             st.info("🔵 **Pressure**: No data yet")
-    
     with legend_col2:
         if min_flow != max_flow or min_flow != 0:
             flow_fig = create_flow_colorbar(min_flow, max_flow)
@@ -371,19 +373,20 @@ def display_element_configuration(wn):
         # Element properties
         display_element_properties(wn, element['name'], element['type'])
         
-        # Deselect button
-        if st.button("❌ Deselect", use_container_width=True):
+        # Clear selection button
+        if st.button("🧹 Clear selection", use_container_width=True):
             st.session_state.selected_nodes = []
             st.session_state.selected_links = []
             st.session_state.current_element = None
             st.rerun()
         
         # Event interface
-        st.markdown("**⚡ Quick Events:**")
+        st.markdown("**⚡ Schedule Event:**")
         new_event = display_event_interface(element['name'], element['type'], element['category'])
         if new_event:
             st.session_state.scheduled_events.append(new_event)
-            st.success("✅ Event scheduled!")
+            sched_time = new_event.get('scheduled_time', 0)
+            st.success(f"✅ Scheduled {new_event['event_type']} on {new_event['element_name']} at {sched_time}s")
             time.sleep(1)
             st.rerun()
     else:
@@ -406,8 +409,6 @@ def display_simulation_results(wn, simulation_data):
     """Display simulation results and monitoring charts."""
     with st.container():
         st.markdown('<h3 class="section-header">📊 Simulation Results</h3>', unsafe_allow_html=True)
-        
-
         
         # Monitoring controls
         monitored_nodes, monitored_links = display_monitoring_controls(wn)
@@ -467,14 +468,14 @@ def display_simulation_planning():
         st.session_state.simulation_timestep_minutes = timestep_minutes
     
     # Calculate total steps
-    total_seconds = duration_hours * 3600
+    total_duration_seconds = duration_hours * 3600
     timestep_seconds = timestep_minutes * 60
-    total_steps = int(total_seconds / timestep_seconds)
+    total_steps = int(total_duration_seconds / timestep_seconds)
     
     # Display plan summary
     st.info(f"**Plan:** {total_steps} steps over {duration_hours} hours (every {timestep_minutes} minutes)")
     
-    return total_seconds, timestep_seconds, total_steps
+    return total_duration_seconds, timestep_seconds, total_steps
 
 
 def display_simulation_progress_compact(simulation_data):
@@ -482,8 +483,8 @@ def display_simulation_progress_compact(simulation_data):
     st.markdown('<h4 class="section-header">⏱️ Progress</h4>', unsafe_allow_html=True)
     
     # Get planning data
-    total_duration_seconds = st.session_state.get('simulation_duration_hours', 24) * 3600
-    timestep_seconds = st.session_state.get('simulation_timestep_minutes', 60) * 60
+    total_duration_seconds = st.session_state.get('run_duration_seconds', st.session_state.get('simulation_duration_hours', 24)*3600)
+    timestep_seconds = st.session_state.get('run_timestep_seconds', st.session_state.get('simulation_timestep_minutes', 60)*60)
     planned_total_steps = int(total_duration_seconds / timestep_seconds)
     
     # Current progress
@@ -520,8 +521,8 @@ def display_simulation_progress(simulation_data):
         return
     
     # Get planning data
-    total_duration_seconds = st.session_state.get('simulation_duration_hours', 24) * 3600
-    timestep_seconds = st.session_state.get('simulation_timestep_minutes', 60) * 60
+    total_duration_seconds = st.session_state.get('run_duration_seconds', st.session_state.get('simulation_duration_hours', 24)*3600)
+    timestep_seconds = st.session_state.get('run_timestep_seconds', st.session_state.get('simulation_timestep_minutes', 60)*60)
     planned_total_steps = int(total_duration_seconds / timestep_seconds)
     
     # Current progress
@@ -564,8 +565,8 @@ def display_simulation_progress(simulation_data):
             y=[1] * len(simulation_data['time']),
             mode='lines+markers',
             name='Completed',
-            line=dict(color='green', width=4),
-            marker=dict(size=8, color='green')
+            line=dict(color='#0072B2', width=4),  # blue
+            marker=dict(size=8, color='#0072B2')
         ))
         
         # Add remaining time line
@@ -576,8 +577,8 @@ def display_simulation_progress(simulation_data):
                 y=[1] * len(remaining_times),
                 mode='lines+markers',
                 name='Remaining',
-                line=dict(color='lightgray', width=2, dash='dash'),
-                marker=dict(size=6, color='lightgray')
+                line=dict(color='#999999', width=2, dash='dash'),  # gray
+                marker=dict(size=6, color='#999999')
             ))
         
         # Add current position marker
@@ -586,7 +587,7 @@ def display_simulation_progress(simulation_data):
             y=[1],
             mode='markers',
             name='Current',
-            marker=dict(size=15, color='red', symbol='diamond')
+            marker=dict(size=15, color='#E69F00', symbol='diamond')  # orange
         ))
         
         fig.update_layout(
