@@ -35,6 +35,34 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
+# Custom CSS for better space utilization
+st.markdown("""
+<style>
+    /* Reduce padding and margins for better space utilization */
+    .main .block-container {
+        padding-top: 1rem;
+        padding-bottom: 1rem;
+        max-width: 100%;
+    }
+    
+    /* Ensure plotly charts use full container width */
+    .js-plotly-plot, .plotly {
+        width: 100% !important;
+    }
+    
+    /* Optimize column spacing */
+    .element-container {
+        margin-bottom: 0.5rem;
+    }
+    
+    /* Make section headers more compact */
+    .section-header {
+        margin-bottom: 0.5rem !important;
+        margin-top: 0.5rem !important;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 
 def initialize_session_state():
     """Initialize all session state variables."""
@@ -229,78 +257,33 @@ def display_interactive_mode():
     st.markdown('<h3 class="section-header">🗺️ Interactive Network Map & Event Configuration</h3>', 
                 unsafe_allow_html=True)
     
-    # Main layout: Network map on left, controls on right
-    map_col, control_col = st.columns([3, 1])
+    # Layout controls
+    fullscreen_map = st.toggle("🔍 Fullscreen Map", value=False, help="Show map in fullscreen mode")
     
-    with map_col:
-        # Instructions and controls above the map
-        st.info("🖱️ **Click on nodes (circles) or links (squares) to select and configure events**")
+    if fullscreen_map:
+        # Fullscreen mode - no columns, use full width
+        display_fullscreen_network_map(wn, sim)
         
-        # Visualization controls
-        viz_col1, viz_col2, viz_col3 = st.columns([2, 1, 1])
-        with viz_col2:
-            show_sim_data = st.toggle(
-                "🌊 Live Visualization", 
-                value=sim.initialized_simulation,
-                disabled=not sim.initialized_simulation,
-                help="Show real-time pressure and flow data"
-            )
-        with viz_col3:
-            display_legend()
-        
-        # Network plot
-        fig = create_network_plot(
-            wn, 
-            st.session_state.selected_nodes, 
-            st.session_state.selected_links,
-            show_simulation_data=show_sim_data,
-            sim_initialized=sim.initialized_simulation
-        )
-        
-        # Display plot with click handling
-        chart_data = st.plotly_chart(
-            fig, 
-            use_container_width=True, 
-            key="network_plot_interaction",
-            on_select="rerun",
-            selection_mode="points"
-        )
-        
-        # Handle click events
-        handle_network_click(chart_data)
-        
-        # Color scale legends
-        if show_sim_data and sim.initialized_simulation:
-            display_color_legends(wn)
-    
-    with control_col:
-        st.markdown('<h3 class="section-header">🎮 Controls</h3>', unsafe_allow_html=True)
-        
-        # Simulation planning (before starting)
-        if not sim.initialized_simulation:
-            display_simulation_planning()
-            st.markdown("---")
-        
-        # Simulation controls
-        handle_simulation_controls(sim, wn, st.session_state.simulation_data)
-        
-        # Show progress during simulation
-        if sim.initialized_simulation and len(st.session_state.simulation_data['time']) > 0:
-            display_simulation_progress_compact(st.session_state.simulation_data)
-        
+        # Show controls below the map in fullscreen mode
         st.markdown("---")
+        control_col1, control_col2 = st.columns([1, 1])
+        with control_col1:
+            display_simulation_controls_compact(sim, wn)
+        with control_col2:
+            display_element_configuration_compact(wn)
+    else:
+        # Normal column layout with optimized ratio for better map visibility
+        map_col, control_col = st.columns([5, 1])  # Give more space to map
         
-        # Element configuration
-        display_element_configuration(wn)
+        with map_col:
+            display_network_map_section(wn, sim)
         
-        # Events summary
-        display_events_summary(st.session_state.scheduled_events, st.session_state.applied_events)
-        
-        # Applied events history
-        display_applied_events_history(st.session_state.applied_events, "Interactive - ")
+        with control_col:
+            display_control_panel(wn, sim)
     
-    # Results visualization
+    # Results visualization (always show below the main layout)
     if len(st.session_state.simulation_data['time']) > 1:
+        st.markdown("---")
         display_simulation_results(wn, st.session_state.simulation_data)
 
 
@@ -646,7 +629,8 @@ def display_batch_mode():
                 [],  # No selection in batch mode
                 [],
                 show_simulation_data=show_batch_sim_data,
-                sim_initialized=batch_sim.initialized_simulation
+                sim_initialized=batch_sim.initialized_simulation,
+                height=800  # Default height for batch mode
             )
             
             st.plotly_chart(batch_fig, use_container_width=True)
@@ -697,6 +681,164 @@ def display_batch_results(batch_wn):
     # Current values for batch mode
     if st.session_state.batch_current_sim_time > 0:
         display_current_values(batch_wn, monitored_nodes, monitored_links, "Batch - ")
+
+
+def display_network_map_section(wn, sim):
+    """Display the network map section with controls."""
+    # Instructions and controls above the map
+    st.info("🖱️ **Click on nodes (circles) or links (squares) to select and configure events**")
+    
+    # Visualization controls
+    viz_col1, viz_col2, viz_col3 = st.columns([1, 1, 1])
+    with viz_col1:
+        show_sim_data = st.toggle(
+            "🌊 Live Visualization", 
+            value=sim.initialized_simulation,
+            disabled=not sim.initialized_simulation,
+            help="Show real-time pressure and flow data"
+        )
+    with viz_col2:
+        display_legend()
+    with viz_col3:
+        # Map size control
+        map_height = st.selectbox("📏 Map Size", 
+                                options=[700, 800, 900, 1000, 1200], 
+                                index=2, 
+                                help="Adjust map height")
+    
+    # Network plot with dynamic height
+    fig = create_network_plot(
+        wn, 
+        st.session_state.selected_nodes, 
+        st.session_state.selected_links,
+        show_simulation_data=show_sim_data,
+        sim_initialized=sim.initialized_simulation,
+        height=map_height
+    )
+    
+    # Display plot with click handling
+    chart_data = st.plotly_chart(
+        fig, 
+        use_container_width=True, 
+        key="network_plot_interaction",
+        on_select="rerun",
+        selection_mode="points"
+    )
+    
+    # Handle click events
+    handle_network_click(chart_data)
+    
+    # Color scale legends
+    if show_sim_data and sim.initialized_simulation:
+        display_color_legends(wn)
+
+
+def display_fullscreen_network_map(wn, sim):
+    """Display the network map in fullscreen mode."""
+    st.markdown("### 🔍 Fullscreen Network Map")
+    st.info("🖱️ **Click on nodes (circles) or links (squares) to select and configure events**")
+    
+    # Visualization controls in fullscreen
+    viz_col1, viz_col2, viz_col3, viz_col4 = st.columns([1, 1, 1, 1])
+    with viz_col1:
+        show_sim_data = st.toggle(
+            "🌊 Live Visualization", 
+            value=sim.initialized_simulation,
+            disabled=not sim.initialized_simulation,
+            help="Show real-time pressure and flow data",
+            key="fullscreen_sim_data"
+        )
+    with viz_col2:
+        display_legend()
+    with viz_col3:
+        map_height = st.selectbox("📏 Map Size", 
+                                options=[800, 900, 1000, 1200, 1400], 
+                                index=2, 
+                                help="Adjust map height",
+                                key="fullscreen_map_height")
+    with viz_col4:
+        st.write("")  # Spacer
+    
+    # Network plot in fullscreen
+    fig = create_network_plot(
+        wn, 
+        st.session_state.selected_nodes, 
+        st.session_state.selected_links,
+        show_simulation_data=show_sim_data,
+        sim_initialized=sim.initialized_simulation,
+        height=map_height
+    )
+    
+    # Display plot with click handling
+    chart_data = st.plotly_chart(
+        fig, 
+        use_container_width=True, 
+        key="network_plot_interaction_fullscreen",
+        on_select="rerun",
+        selection_mode="points"
+    )
+    
+    # Handle click events
+    handle_network_click(chart_data)
+    
+    # Color scale legends
+    if show_sim_data and sim.initialized_simulation:
+        display_color_legends(wn)
+
+
+def display_control_panel(wn, sim):
+    """Display the control panel section."""
+    st.markdown('<h3 class="section-header">🎮 Controls</h3>', unsafe_allow_html=True)
+    
+    # Simulation planning (before starting)
+    if not sim.initialized_simulation:
+        display_simulation_planning()
+        st.markdown("---")
+    
+    # Simulation controls
+    handle_simulation_controls(sim, wn, st.session_state.simulation_data)
+    
+    # Show progress during simulation
+    if sim.initialized_simulation and len(st.session_state.simulation_data['time']) > 0:
+        display_simulation_progress_compact(st.session_state.simulation_data)
+    
+    st.markdown("---")
+    
+    # Element configuration
+    display_element_configuration(wn)
+    
+    # Events summary
+    display_events_summary(st.session_state.scheduled_events, st.session_state.applied_events)
+    
+    # Applied events history
+    display_applied_events_history(st.session_state.applied_events, "Interactive - ")
+
+
+def display_simulation_controls_compact(sim, wn):
+    """Display compact simulation controls for fullscreen mode."""
+    st.markdown('<h4 class="section-header">🎮 Simulation Controls</h4>', unsafe_allow_html=True)
+    
+    # Simulation planning (before starting)
+    if not sim.initialized_simulation:
+        display_simulation_planning()
+    
+    # Simulation controls
+    handle_simulation_controls(sim, wn, st.session_state.simulation_data)
+    
+    # Show progress during simulation
+    if sim.initialized_simulation and len(st.session_state.simulation_data['time']) > 0:
+        display_simulation_progress_compact(st.session_state.simulation_data)
+
+
+def display_element_configuration_compact(wn):
+    """Display compact element configuration for fullscreen mode."""
+    st.markdown('<h4 class="section-header">🎯 Element Configuration</h4>', unsafe_allow_html=True)
+    
+    # Element configuration
+    display_element_configuration(wn)
+    
+    # Events summary
+    display_events_summary(st.session_state.scheduled_events, st.session_state.applied_events)
 
 
 def main():

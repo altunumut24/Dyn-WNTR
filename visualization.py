@@ -144,7 +144,7 @@ def get_flow_color_and_width(flow, min_flow, max_flow):
 
 
 def create_network_plot(wn: WaterNetworkModel, selected_nodes: List[str] = None, selected_links: List[str] = None, 
-                        show_simulation_data: bool = False, sim_initialized: bool = False):
+                        show_simulation_data: bool = False, sim_initialized: bool = False, height: int = 900):
     """Create interactive plotly network visualization with click handling and optional simulation data overlay."""
     node_positions, edge_list, node_info, edge_info = get_network_layout(wn)
     
@@ -405,7 +405,8 @@ def create_network_plot(wn: WaterNetworkModel, selected_nodes: List[str] = None,
         xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
         yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
         plot_bgcolor='white',
-        height=800  # Increased from 600 for better visibility
+        height=height,
+        autosize=True  # Make it more responsive to container size
     )
     
     return fig
