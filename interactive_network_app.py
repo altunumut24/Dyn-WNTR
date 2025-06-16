@@ -5,6 +5,7 @@ A Streamlit-based application for interactive water network simulation with even
 
 import streamlit as st
 import time
+import datetime
 from typing import Dict, Any
 
 # Import our modularized components
@@ -269,8 +270,17 @@ def display_interactive_mode():
     with control_col:
         st.markdown('<h3 class="section-header">🎮 Controls</h3>', unsafe_allow_html=True)
         
+        # Simulation planning (before starting)
+        if not sim.initialized_simulation:
+            display_simulation_planning()
+            st.markdown("---")
+        
         # Simulation controls
         handle_simulation_controls(sim, wn, st.session_state.simulation_data)
+        
+        # Show progress during simulation
+        if sim.initialized_simulation and len(st.session_state.simulation_data['time']) > 0:
+            display_simulation_progress_compact(st.session_state.simulation_data)
         
         st.markdown("---")
         
@@ -397,6 +407,8 @@ def display_simulation_results(wn, simulation_data):
     with st.container():
         st.markdown('<h3 class="section-header">📊 Simulation Results</h3>', unsafe_allow_html=True)
         
+
+        
         # Monitoring controls
         monitored_nodes, monitored_links = display_monitoring_controls(wn)
         
@@ -420,6 +432,173 @@ def display_simulation_results(wn, simulation_data):
         # Current values
         if st.session_state.current_sim_time > 0:
             display_current_values(wn, monitored_nodes, monitored_links)
+
+
+def display_simulation_planning():
+    """Display simulation planning controls for duration and timestep."""
+    st.markdown('<h4 class="section-header">⏱️ Simulation Planning</h4>', unsafe_allow_html=True)
+    
+    # Initialize planning session state
+    if 'simulation_duration_hours' not in st.session_state:
+        st.session_state.simulation_duration_hours = 24
+    if 'simulation_timestep_minutes' not in st.session_state:
+        st.session_state.simulation_timestep_minutes = 60
+    
+    plan_col1, plan_col2 = st.columns(2)
+    
+    with plan_col1:
+        duration_hours = st.number_input(
+            "Simulation Duration (hours)",
+            min_value=1,
+            max_value=168,  # 1 week max
+            value=st.session_state.simulation_duration_hours,
+            step=1,
+            help="Total time to simulate"
+        )
+        st.session_state.simulation_duration_hours = duration_hours
+    
+    with plan_col2:
+        timestep_minutes = st.selectbox(
+            "Timestep (minutes)",
+            options=[15, 30, 60, 120, 180, 360],  # Common timesteps
+            index=[15, 30, 60, 120, 180, 360].index(st.session_state.simulation_timestep_minutes),
+            help="Time between simulation steps"
+        )
+        st.session_state.simulation_timestep_minutes = timestep_minutes
+    
+    # Calculate total steps
+    total_seconds = duration_hours * 3600
+    timestep_seconds = timestep_minutes * 60
+    total_steps = int(total_seconds / timestep_seconds)
+    
+    # Display plan summary
+    st.info(f"**Plan:** {total_steps} steps over {duration_hours} hours (every {timestep_minutes} minutes)")
+    
+    return total_seconds, timestep_seconds, total_steps
+
+
+def display_simulation_progress_compact(simulation_data):
+    """Display compact simulation progress in the controls area."""
+    st.markdown('<h4 class="section-header">⏱️ Progress</h4>', unsafe_allow_html=True)
+    
+    # Get planning data
+    total_duration_seconds = st.session_state.get('simulation_duration_hours', 24) * 3600
+    timestep_seconds = st.session_state.get('simulation_timestep_minutes', 60) * 60
+    planned_total_steps = int(total_duration_seconds / timestep_seconds)
+    
+    # Current progress
+    current_time = simulation_data['time'][-1]
+    completed_steps = len(simulation_data['time'])
+    
+    # Calculate progress
+    time_progress = min(current_time / total_duration_seconds, 1.0)
+    
+    # Compact metrics
+    prog_col1, prog_col2 = st.columns(2)
+    
+    with prog_col1:
+        st.metric("Steps", f"{completed_steps}/{planned_total_steps}")
+    
+    with prog_col2:
+        remaining_steps = max(0, planned_total_steps - completed_steps)
+        st.metric("Remaining", f"{remaining_steps} steps")
+    
+    # Progress bar
+    st.progress(time_progress, text=f"{time_progress*100:.1f}% Complete")
+    
+    # Time info
+    remaining_time = max(0, total_duration_seconds - current_time)
+    st.caption(f"⏰ {datetime.timedelta(seconds=int(current_time))} elapsed, {datetime.timedelta(seconds=int(remaining_time))} remaining")
+
+
+def display_simulation_progress(simulation_data):
+    """Display simulation progress timeline and statistics."""
+    st.markdown('<h4 class="section-header">📊 Simulation Progress</h4>', unsafe_allow_html=True)
+    
+    if not simulation_data['time']:
+        st.info("No simulation data yet - start simulation to see progress")
+        return
+    
+    # Get planning data
+    total_duration_seconds = st.session_state.get('simulation_duration_hours', 24) * 3600
+    timestep_seconds = st.session_state.get('simulation_timestep_minutes', 60) * 60
+    planned_total_steps = int(total_duration_seconds / timestep_seconds)
+    
+    # Current progress
+    current_time = simulation_data['time'][-1]
+    completed_steps = len(simulation_data['time'])
+    
+    # Calculate progress
+    time_progress = min(current_time / total_duration_seconds, 1.0)
+    step_progress = min(completed_steps / planned_total_steps, 1.0)
+    
+    # Display metrics
+    prog_col1, prog_col2, prog_col3, prog_col4 = st.columns(4)
+    
+    with prog_col1:
+        st.metric("Completed Steps", f"{completed_steps}/{planned_total_steps}")
+    
+    with prog_col2:
+        st.metric("Simulation Time", f"{datetime.timedelta(seconds=int(current_time))}")
+    
+    with prog_col3:
+        remaining_time = max(0, total_duration_seconds - current_time)
+        st.metric("Time Remaining", f"{datetime.timedelta(seconds=int(remaining_time))}")
+    
+    with prog_col4:
+        st.metric("Progress", f"{time_progress*100:.1f}%")
+    
+    # Progress bar
+    st.progress(time_progress, text=f"Simulation Progress: {time_progress*100:.1f}%")
+    
+    # Timeline visualization
+    if completed_steps > 1:
+        import plotly.graph_objects as go
+        
+        # Create timeline chart
+        fig = go.Figure()
+        
+        # Add completed time line
+        fig.add_trace(go.Scatter(
+            x=simulation_data['time'],
+            y=[1] * len(simulation_data['time']),
+            mode='lines+markers',
+            name='Completed',
+            line=dict(color='green', width=4),
+            marker=dict(size=8, color='green')
+        ))
+        
+        # Add remaining time line
+        if current_time < total_duration_seconds:
+            remaining_times = list(range(int(current_time), int(total_duration_seconds) + timestep_seconds, timestep_seconds))
+            fig.add_trace(go.Scatter(
+                x=remaining_times,
+                y=[1] * len(remaining_times),
+                mode='lines+markers',
+                name='Remaining',
+                line=dict(color='lightgray', width=2, dash='dash'),
+                marker=dict(size=6, color='lightgray')
+            ))
+        
+        # Add current position marker
+        fig.add_trace(go.Scatter(
+            x=[current_time],
+            y=[1],
+            mode='markers',
+            name='Current',
+            marker=dict(size=15, color='red', symbol='diamond')
+        ))
+        
+        fig.update_layout(
+            title="🕐 Simulation Timeline",
+            xaxis_title="Time (seconds)",
+            yaxis=dict(showticklabels=False, range=[0.5, 1.5]),
+            height=200,
+            showlegend=True,
+            margin=dict(l=50, r=50, t=50, b=50)
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
 
 
 def display_batch_mode():
@@ -470,6 +649,10 @@ def display_batch_mode():
             )
             
             st.plotly_chart(batch_fig, use_container_width=True)
+            
+            # Color scale legends for batch mode
+            if show_batch_sim_data and batch_sim.initialized_simulation:
+                display_color_legends(batch_wn)
             
             # Applied events history
             display_applied_events_history(st.session_state.batch_applied_events, "Batch - ")
@@ -531,7 +714,7 @@ def main():
     
     # Create pill-based tabs that maintain state
     tabs = ["🎮 Interactive Mode", "📋 Batch Simulator"]
-    active_tab = st.pills("Navigation", tabs, selection_mode="single", default=st.session_state.active_tab)
+    active_tab = st.pills("", tabs, selection_mode="single", default=st.session_state.active_tab)
     
     # Update session state when tab changes
     if active_tab != st.session_state.active_tab:

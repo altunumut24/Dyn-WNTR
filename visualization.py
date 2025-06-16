@@ -60,40 +60,87 @@ def get_network_layout(wn: WaterNetworkModel):
 
 
 def get_pressure_color(pressure, min_pressure, max_pressure):
-    """Generate color based on pressure value."""
+    """Generate color based on pressure value using viridis-like yellow to purple mapping."""
     if max_pressure == min_pressure:
-        return 'lightblue'
+        return 'rgb(253, 231, 37)'  # Default yellow
     
     normalized = (pressure - min_pressure) / (max_pressure - min_pressure)
     normalized = max(0, min(1, normalized))
     
-    # Simple blue to red color mapping
-    if normalized < 0.33:
-        return f'rgb({int(255 * normalized * 3)}, 0, 255)'
-    elif normalized < 0.66:
-        return f'rgb(255, {int(255 * (normalized - 0.33) * 3)}, 0)'
+    # Viridis-like color mapping: yellow -> green -> blue -> purple
+    if normalized < 0.25:
+        # Yellow to green
+        t = normalized * 4
+        r = int(253 - (253 - 68) * t)
+        g = int(231 - (231 - 1) * t)
+        b = int(37 + (84 - 37) * t)
+    elif normalized < 0.5:
+        # Green to teal
+        t = (normalized - 0.25) * 4
+        r = int(68 - (68 - 33) * t)
+        g = int(1 + (144 - 1) * t)
+        b = int(84 + (140 - 84) * t)
+    elif normalized < 0.75:
+        # Teal to blue
+        t = (normalized - 0.5) * 4
+        r = int(33 - (33 - 59) * t)
+        g = int(144 - (144 - 82) * t)
+        b = int(140 + (139 - 140) * t)
     else:
-        return f'rgb(255, 255, {int(255 * (1 - normalized))})'
+        # Blue to purple
+        t = (normalized - 0.75) * 4
+        r = int(59 + (68 - 59) * t)
+        g = int(82 - (82 - 1) * t)
+        b = int(139 + (84 - 139) * t)
+    
+    return f'rgb({r}, {g}, {b})'
 
 
 def get_flow_color_and_width(flow, min_flow, max_flow):
-    """Generate color and width based on flow value."""
+    """Generate color and width based on flow value using viridis-like colors."""
     abs_flow = abs(flow)
     max_abs_flow = max(abs(min_flow), abs(max_flow))
     
     if max_abs_flow == 0:
-        return 'lightgray', 2
+        return 'rgb(253, 231, 37)', 2  # Default yellow
     
     # Width based on flow magnitude
     width = 2 + 8 * (abs_flow / max_abs_flow)
     
-    # Color based on flow direction and magnitude
-    if flow > 0:
-        intensity = abs_flow / max_abs_flow
-        return f'rgb(0, {int(255 * intensity)}, 0)', width
+    # Use viridis-like color mapping for flow intensity
+    intensity = abs_flow / max_abs_flow
+    
+    # Apply the same viridis color scheme as pressure
+    if intensity < 0.25:
+        # Yellow to green
+        t = intensity * 4
+        r = int(253 - (253 - 68) * t)
+        g = int(231 - (231 - 1) * t)
+        b = int(37 + (84 - 37) * t)
+    elif intensity < 0.5:
+        # Green to teal
+        t = (intensity - 0.25) * 4
+        r = int(68 - (68 - 33) * t)
+        g = int(1 + (144 - 1) * t)
+        b = int(84 + (140 - 84) * t)
+    elif intensity < 0.75:
+        # Teal to blue
+        t = (intensity - 0.5) * 4
+        r = int(33 - (33 - 59) * t)
+        g = int(144 - (144 - 82) * t)
+        b = int(140 + (139 - 140) * t)
     else:
-        intensity = abs_flow / max_abs_flow
-        return f'rgb({int(255 * intensity)}, 0, 0)', width
+        # Blue to purple
+        t = (intensity - 0.75) * 4
+        r = int(59 + (68 - 59) * t)
+        g = int(82 - (82 - 1) * t)
+        b = int(139 + (84 - 139) * t)
+    
+    # For negative flows, add a slight red tint to distinguish direction
+    if flow < 0:
+        r = min(255, r + 30)  # Add red component for reverse flow
+    
+    return f'rgb({r}, {g}, {b})', width
 
 
 def create_network_plot(wn: WaterNetworkModel, selected_nodes: List[str] = None, selected_links: List[str] = None, 
@@ -195,6 +242,7 @@ def create_network_plot(wn: WaterNetworkModel, selected_nodes: List[str] = None,
     link_customdata = []
     link_symbols = []
     link_colors = []
+    link_hover_text = []
     
     for link_name, info in edge_info.items():
         link_x.append(info['mid_pos'][0])
@@ -203,6 +251,19 @@ def create_network_plot(wn: WaterNetworkModel, selected_nodes: List[str] = None,
         link_types.append(info['type'])
         # Store name and type as customdata for click detection
         link_customdata.append([link_name, info['type'], 'link'])
+        
+        # Create hover text with flow information
+        hover_text = f"<b>{link_name}</b><br>Type: {info['type']}"
+        if link_name in link_flows:
+            flow = link_flows[link_name]
+            if flow is not None:
+                hover_text += f"<br>Flow Rate: {flow:.4f} m³/s"
+            else:
+                hover_text += f"<br>Flow Rate: N/A"
+        else:
+            hover_text += f"<br>Flow Rate: No data"
+        hover_text += "<br>Click to select"
+        link_hover_text.append(hover_text)
         
         # Professional symbols for different link types (smaller and less prominent)
         if info['type'] == 'Pipe':
@@ -234,7 +295,8 @@ def create_network_plot(wn: WaterNetworkModel, selected_nodes: List[str] = None,
         textfont=dict(size=8, color='black', family="Arial"),  # Increased from 6
         # CRITICAL: Store name, type, and category in customdata
         customdata=link_customdata,
-        hovertemplate="<b>%{customdata[0]}</b><br>Type: %{customdata[1]}<br>Click to select<extra></extra>",
+        hovertemplate='%{hovertext}<extra></extra>',
+        hovertext=link_hover_text,
         name='Links (clickable)',
         showlegend=False
     ))
