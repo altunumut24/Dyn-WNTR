@@ -664,53 +664,197 @@ def create_monitoring_charts(simulation_data: Dict, monitored_nodes: List[str], 
     fig_flow = None
     
     # Pressure chart
-    if monitored_nodes and 'pressures' in simulation_data:
-        pressure_data = simulation_data['pressures']
-        filtered_pressure_data = {node: pressure_data[node] for node in monitored_nodes if node in pressure_data}
+    if monitored_nodes:
+        fig_pressure = go.Figure()
         
-        if filtered_pressure_data:
-            fig_pressure = go.Figure()
-            for node_name, pressure_values in filtered_pressure_data.items():
-                fig_pressure.add_trace(go.Scatter(
-                    x=simulation_data['time'],
-                    y=pressure_values,
-                    mode='lines+markers',
-                    name=node_name,
-                    line=dict(width=3),
-                    marker=dict(size=6)
-                ))
+        if 'pressures' in simulation_data and simulation_data['pressures']:
+            pressure_data = simulation_data['pressures']
+            time_data = simulation_data['time']
             
-            fig_pressure.update_layout(
-                title="🔵 Node Pressure Over Time",
-                xaxis_title="Time (s)",
-                yaxis_title="Pressure (m)",
-                height=400,
-                hovermode='x unified'
+            # Add traces for each monitored node
+            traces_added = 0
+            for node_name in monitored_nodes:
+                if node_name in pressure_data:
+                    node_pressure_data = pressure_data[node_name]
+                    
+                    # Handle cases where data length doesn't match time length
+                    if len(node_pressure_data) > 0:
+                        # Ensure data lengths match
+                        if len(node_pressure_data) == len(time_data):
+                            # Perfect match - use all data
+                            x_data = time_data
+                            y_data = node_pressure_data
+                        elif len(node_pressure_data) < len(time_data):
+                            # Data is shorter - use matching portion
+                            x_data = time_data[-len(node_pressure_data):]
+                            y_data = node_pressure_data
+                        else:
+                            # Data is longer - truncate to match time
+                            x_data = time_data
+                            y_data = node_pressure_data[:len(time_data)]
+                        
+                        fig_pressure.add_trace(go.Scatter(
+                            x=x_data,
+                            y=y_data,
+                            mode='lines+markers',
+                            name=node_name,
+                            line=dict(width=3),
+                            marker=dict(size=6)
+                        ))
+                        traces_added += 1
+                else:
+                    # Element not in data yet - add a placeholder trace with single current point
+                    if time_data:  # Only if we have time data
+                        try:
+                            # Add a single point at the current time with current value
+                            current_time = time_data[-1]
+                            # This will be populated by the immediate initialization above
+                            fig_pressure.add_trace(go.Scatter(
+                                x=[current_time],
+                                y=[0],  # Will be updated in next simulation step
+                                mode='markers',
+                                name=f"{node_name} (new)",
+                                line=dict(width=3, dash='dot'),
+                                marker=dict(size=8, symbol='diamond')
+                            ))
+                            traces_added += 1
+                        except:
+                            pass
+            
+            # If no traces were added, create an empty chart with message
+            if traces_added == 0:
+                fig_pressure.add_trace(go.Scatter(
+                    x=[0], y=[0],
+                    mode='markers',
+                    marker=dict(size=0, opacity=0),
+                    showlegend=False,
+                    hoverinfo='skip'
+                ))
+                fig_pressure.add_annotation(
+                    text="No data available for selected nodes<br>Start simulation to see pressure data",
+                    xref="paper", yref="paper",
+                    x=0.5, y=0.5, showarrow=False,
+                    font=dict(size=14, color="gray")
+                )
+        else:
+            # No simulation data available yet
+            fig_pressure.add_trace(go.Scatter(
+                x=[0], y=[0],
+                mode='markers',
+                marker=dict(size=0, opacity=0),
+                showlegend=False,
+                hoverinfo='skip'
+            ))
+            fig_pressure.add_annotation(
+                text="No simulation data yet<br>Initialize and run simulation to see pressure data",
+                xref="paper", yref="paper",
+                x=0.5, y=0.5, showarrow=False,
+                font=dict(size=14, color="gray")
             )
+        
+        fig_pressure.update_layout(
+            title=f"🔵 Node Pressure Over Time ({len(monitored_nodes)} nodes selected)",
+            xaxis_title="Time (s)",
+            yaxis_title="Pressure (m)",
+            height=400,
+            hovermode='x unified'
+        )
     
     # Flow chart
-    if monitored_links and 'flows' in simulation_data:
-        flow_data = simulation_data['flows']
-        filtered_flow_data = {link: flow_data[link] for link in monitored_links if link in flow_data}
+    if monitored_links:
+        fig_flow = go.Figure()
         
-        if filtered_flow_data:
-            fig_flow = go.Figure()
-            for link_name, flow_values in filtered_flow_data.items():
-                fig_flow.add_trace(go.Scatter(
-                    x=simulation_data['time'],
-                    y=flow_values,
-                    mode='lines+markers',
-                    name=link_name,
-                    line=dict(width=3),
-                    marker=dict(size=6)
-                ))
+        if 'flows' in simulation_data and simulation_data['flows']:
+            flow_data = simulation_data['flows']
+            time_data = simulation_data['time']
             
-            fig_flow.update_layout(
-                title="🔗 Link Flow Over Time",
-                xaxis_title="Time (s)",
-                yaxis_title="Flow Rate (m³/s)",
-                height=400,
-                hovermode='x unified'
+            # Add traces for each monitored link
+            traces_added = 0
+            for link_name in monitored_links:
+                if link_name in flow_data:
+                    link_flow_data = flow_data[link_name]
+                    
+                    # Handle cases where data length doesn't match time length
+                    if len(link_flow_data) > 0:
+                        # Ensure data lengths match
+                        if len(link_flow_data) == len(time_data):
+                            # Perfect match - use all data
+                            x_data = time_data
+                            y_data = link_flow_data
+                        elif len(link_flow_data) < len(time_data):
+                            # Data is shorter - use matching portion
+                            x_data = time_data[-len(link_flow_data):]
+                            y_data = link_flow_data
+                        else:
+                            # Data is longer - truncate to match time
+                            x_data = time_data
+                            y_data = link_flow_data[:len(time_data)]
+                        
+                        fig_flow.add_trace(go.Scatter(
+                            x=x_data,
+                            y=y_data,
+                            mode='lines+markers',
+                            name=link_name,
+                            line=dict(width=3),
+                            marker=dict(size=6)
+                        ))
+                        traces_added += 1
+                else:
+                    # Element not in data yet - add a placeholder trace with single current point
+                    if time_data:  # Only if we have time data
+                        try:
+                            # Add a single point at the current time with current value
+                            current_time = time_data[-1]
+                            # This will be populated by the immediate initialization above
+                            fig_flow.add_trace(go.Scatter(
+                                x=[current_time],
+                                y=[0],  # Will be updated in next simulation step
+                                mode='markers',
+                                name=f"{link_name} (new)",
+                                line=dict(width=3, dash='dot'),
+                                marker=dict(size=8, symbol='diamond')
+                            ))
+                            traces_added += 1
+                        except:
+                            pass
+            
+            # If no traces were added, create an empty chart with message
+            if traces_added == 0:
+                fig_flow.add_trace(go.Scatter(
+                    x=[0], y=[0],
+                    mode='markers',
+                    marker=dict(size=0, opacity=0),
+                    showlegend=False,
+                    hoverinfo='skip'
+                ))
+                fig_flow.add_annotation(
+                    text="No data available for selected links<br>Start simulation to see flow data",
+                    xref="paper", yref="paper",
+                    x=0.5, y=0.5, showarrow=False,
+                    font=dict(size=14, color="gray")
+                )
+        else:
+            # No simulation data available yet
+            fig_flow.add_trace(go.Scatter(
+                x=[0], y=[0],
+                mode='markers',
+                marker=dict(size=0, opacity=0),
+                showlegend=False,
+                hoverinfo='skip'
+            ))
+            fig_flow.add_annotation(
+                text="No simulation data yet<br>Initialize and run simulation to see flow data",
+                xref="paper", yref="paper",
+                x=0.5, y=0.5, showarrow=False,
+                font=dict(size=14, color="gray")
             )
+        
+        fig_flow.update_layout(
+            title=f"🔗 Link Flow Over Time ({len(monitored_links)} links selected)",
+            xaxis_title="Time (s)",
+            yaxis_title="Flow Rate (m³/s)",
+            height=400,
+            hovermode='x unified'
+        )
     
     return fig_pressure, fig_flow 

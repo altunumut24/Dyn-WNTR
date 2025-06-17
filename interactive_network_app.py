@@ -307,10 +307,17 @@ def handle_simulation_step(sim, wn, simulation_data, session_prefix=""):
         # Collect data for monitored elements
         simulation_data['time'].append(sim_time)
         
-        # Get monitored elements
-        monitored_nodes_key = f'{session_prefix}monitored_nodes' if session_prefix else 'monitored_nodes'
-        monitored_links_key = f'{session_prefix}monitored_links' if session_prefix else 'monitored_links'
+        # Get monitored elements - use the actual widget keys for real-time updates
+        if session_prefix:
+            # For batch mode, use the actual widget keys
+            monitored_nodes_key = f'{session_prefix}pressure_monitoring_nodes'
+            monitored_links_key = f'{session_prefix}flow_monitoring_links'
+        else:
+            # For interactive mode, use the actual widget keys
+            monitored_nodes_key = 'pressure_monitoring_nodes'
+            monitored_links_key = 'flow_monitoring_links'
         
+        # Get current selections, fallback to first few elements if not set
         monitored_nodes = st.session_state.get(monitored_nodes_key, list(wn.node_name_list)[:5])
         monitored_links = st.session_state.get(monitored_links_key, list(wn.link_name_list)[:5])
         
@@ -574,12 +581,16 @@ def display_simulation_results(wn, simulation_data):
         with chart_col1:
             if fig_pressure:
                 st.plotly_chart(fig_pressure, use_container_width=True)
+            elif monitored_nodes:
+                st.info("📍 No data yet for selected nodes - run simulation to see pressure monitoring")
             else:
                 st.info("📍 Select nodes above to see pressure monitoring")
         
         with chart_col2:
             if fig_flow:
                 st.plotly_chart(fig_flow, use_container_width=True)
+            elif monitored_links:
+                st.info("🔗 No data yet for selected links - run simulation to see flow monitoring")
             else:
                 st.info("🔗 Select links above to see flow monitoring")
         

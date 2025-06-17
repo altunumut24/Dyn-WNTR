@@ -434,18 +434,24 @@ def collect_simulation_data(wn: WaterNetworkModel, monitored_nodes: List[str],
     - Data is organized by element name for easy plotting
     - Pressure is measured in meters, flow in cubic meters per second
     """
-    # Get the current simulation time (last entry in time list)
-    current_time = simulation_data['time'][-1] if simulation_data['time'] else 0
+    # Get the current number of time steps
+    num_timesteps = len(simulation_data['time'])
     
     # Collect pressure data for monitored nodes
     for node_name in monitored_nodes:
         if node_name in wn.node_name_list:
             node = wn.get_node(node_name)
+            
             # Initialize list for this node if first time
             if node_name not in simulation_data['pressures']:
                 simulation_data['pressures'][node_name] = []
+                # If this is a new element added mid-simulation, backfill with zeros
+                # This ensures all data series have the same length for plotting
+                simulation_data['pressures'][node_name] = [0.0] * (num_timesteps - 1)
+            
             # Get current pressure (0 if not available)
             pressure = getattr(node, 'pressure', 0) if hasattr(node, 'pressure') else 0
+            pressure = float(pressure) if pressure is not None else 0.0
             # Add to time series data
             simulation_data['pressures'][node_name].append(pressure)
     
@@ -453,11 +459,17 @@ def collect_simulation_data(wn: WaterNetworkModel, monitored_nodes: List[str],
     for link_name in monitored_links:
         if link_name in wn.link_name_list:
             link = wn.get_link(link_name)
+            
             # Initialize list for this link if first time
             if link_name not in simulation_data['flows']:
                 simulation_data['flows'][link_name] = []
+                # If this is a new element added mid-simulation, backfill with zeros
+                # This ensures all data series have the same length for plotting
+                simulation_data['flows'][link_name] = [0.0] * (num_timesteps - 1)
+            
             # Get current flow (0 if not available)
             flow = getattr(link, 'flow', 0) if hasattr(link, 'flow') else 0
+            flow = float(flow) if flow is not None else 0.0
             # Add to time series data
             simulation_data['flows'][link_name].append(flow)
 

@@ -303,33 +303,105 @@ def display_monitoring_controls(wn: WaterNetworkModel, session_key_prefix: str =
         st.markdown("**📍 Select Nodes to Monitor:**")
         available_nodes = list(wn.node_name_list)
         
-        session_key = f"{session_key_prefix}monitored_nodes"
-        if session_key not in st.session_state:
-            st.session_state[session_key] = available_nodes[:DEFAULT_MONITORED_NODES_COUNT]
+        # Use the widget key as the primary session state key to avoid mismatches
+        widget_key = f"{session_key_prefix}pressure_monitoring_nodes"
+        
+        # Initialize or validate existing session state
+        if widget_key not in st.session_state:
+            # First time - use first few nodes
+            st.session_state[widget_key] = available_nodes[:DEFAULT_MONITORED_NODES_COUNT]
+        else:
+            # Validate that existing selections still exist in current network
+            current_selections = st.session_state[widget_key]
+            valid_selections = [node for node in current_selections if node in available_nodes]
+            
+            # If none of the previous selections are valid, reset to defaults
+            if not valid_selections:
+                st.session_state[widget_key] = available_nodes[:DEFAULT_MONITORED_NODES_COUNT]
+            else:
+                st.session_state[widget_key] = valid_selections
         
         monitored_nodes = st.multiselect(
             "Choose nodes for pressure monitoring:",
             available_nodes,
-            default=st.session_state[session_key],
-            key=f"{session_key_prefix}pressure_monitoring_nodes"
+            default=st.session_state[widget_key],
+            key=widget_key
         )
-        st.session_state[session_key] = monitored_nodes
+        
+        # Also maintain backward compatibility with the old session state key
+        old_session_key = f"{session_key_prefix}monitored_nodes"
+        st.session_state[old_session_key] = monitored_nodes
+        
+        # Initialize data structure for newly selected nodes
+        simulation_data_key = f"{session_key_prefix}simulation_data" if session_key_prefix else "simulation_data"
+        if simulation_data_key in st.session_state:
+            simulation_data = st.session_state[simulation_data_key]
+            for node_name in monitored_nodes:
+                if node_name not in simulation_data['pressures']:
+                    # Initialize with current data if available, or empty list
+                    simulation_data['pressures'][node_name] = []
+                    # If we have time data, backfill with current pressure value
+                    if simulation_data['time'] and node_name in wn.node_name_list:
+                        try:
+                            current_pressure = getattr(wn.get_node(node_name), 'pressure', 0) or 0
+                            current_pressure = float(current_pressure)
+                            # Backfill with current value
+                            simulation_data['pressures'][node_name] = [current_pressure] * len(simulation_data['time'])
+                        except:
+                            # Fallback to zeros if we can't get current value
+                            simulation_data['pressures'][node_name] = [0.0] * len(simulation_data['time'])
     
     with monitoring_col2:
         st.markdown("**🔗 Select Links to Monitor:**")
         available_links = list(wn.link_name_list)
         
-        session_key = f"{session_key_prefix}monitored_links"
-        if session_key not in st.session_state:
-            st.session_state[session_key] = available_links[:DEFAULT_MONITORED_LINKS_COUNT]
+        # Use the widget key as the primary session state key to avoid mismatches
+        widget_key = f"{session_key_prefix}flow_monitoring_links"
+        
+        # Initialize or validate existing session state
+        if widget_key not in st.session_state:
+            # First time - use first few links
+            st.session_state[widget_key] = available_links[:DEFAULT_MONITORED_LINKS_COUNT]
+        else:
+            # Validate that existing selections still exist in current network
+            current_selections = st.session_state[widget_key]
+            valid_selections = [link for link in current_selections if link in available_links]
+            
+            # If none of the previous selections are valid, reset to defaults
+            if not valid_selections:
+                st.session_state[widget_key] = available_links[:DEFAULT_MONITORED_LINKS_COUNT]
+            else:
+                st.session_state[widget_key] = valid_selections
         
         monitored_links = st.multiselect(
             "Choose links for flow monitoring:",
             available_links,
-            default=st.session_state[session_key],
-            key=f"{session_key_prefix}flow_monitoring_links"
+            default=st.session_state[widget_key],
+            key=widget_key
         )
-        st.session_state[session_key] = monitored_links
+        
+        # Also maintain backward compatibility with the old session state key
+        old_session_key = f"{session_key_prefix}monitored_links"
+        st.session_state[old_session_key] = monitored_links
+        
+        # Initialize data structure for newly selected links
+        simulation_data_key = f"{session_key_prefix}simulation_data" if session_key_prefix else "simulation_data"
+        if simulation_data_key in st.session_state:
+            simulation_data = st.session_state[simulation_data_key]
+            for link_name in monitored_links:
+                if link_name not in simulation_data['flows']:
+                    # Initialize with current data if available, or empty list
+                    simulation_data['flows'][link_name] = []
+                    # If we have time data, backfill with current flow value
+                    if simulation_data['time'] and link_name in wn.link_name_list:
+                        try:
+                            current_flow = getattr(wn.get_link(link_name), 'flow', 0) or 0
+                            current_flow = float(current_flow)
+                            # Backfill with current value
+                            simulation_data['flows'][link_name] = [current_flow] * len(simulation_data['time'])
+                        except:
+                            # Fallback to zeros if we can't get current value
+                            simulation_data['flows'][link_name] = [0.0] * len(simulation_data['time'])
     
     return monitored_nodes, monitored_links
 
@@ -535,14 +607,14 @@ def display_network_file_selector() -> Optional[str]:
     """
     Display a professional network file selection interface.
     
-    This component allows users to either use the default network file
+    This component allows users to either use example network files
     or upload their own EPANET INP file for simulation.
     
     Returns:
         Optional[str]: Path to the selected INP file, or None if no valid file
         
     Interface design:
-    - Shows current default network information
+    - Shows available example networks
     - Provides professional file upload option
     - Validates uploaded files
     - Handles file naming and storage
@@ -552,21 +624,54 @@ def display_network_file_selector() -> Optional[str]:
     # Network file selection options
     file_option = st.radio(
         "Network Source:",
-        ["📊 Use Default Network (NET_4.inp)", "📤 Upload Custom Network"],
-        help="Choose to use the default network or upload your own EPANET INP file"
+        ["📊 Use Example Networks", "📤 Upload Custom Network"],
+        help="Choose to use example networks or upload your own EPANET INP file"
     )
     
-    if file_option == "📊 Use Default Network (NET_4.inp)":
-        # Show information about default network
-        with st.expander("ℹ️ Default Network Information", expanded=False):
-            st.info("""
-            **Default Network: NET_4.inp**
-            - Sample water distribution network
-            - Pre-configured for demonstration
-            - Contains junctions, pipes, pumps, and tanks
-            - Suitable for testing and learning
-            """)
-        return "NET_4.inp"
+    if file_option == "📊 Use Example Networks":
+        # Example network selection
+        st.markdown("**Choose an example network:**")
+        example_network = st.selectbox(
+            "Example Networks:",
+            [
+                "NET_2.inp - Large Distribution Network",
+                "NET_3.inp - Medium Distribution Network", 
+                "NET_4.inp - Sample Distribution Network"
+            ],
+            help="Select from available example networks"
+        )
+        
+        # Extract filename from selection
+        selected_file = example_network.split(" - ")[0]
+        
+        # Show information about selected network
+        with st.expander(f"ℹ️ {selected_file} Information", expanded=False):
+            if selected_file == "NET_2.inp":
+                st.info("""
+                **NET_2.inp - Large Distribution Network**
+                - Complex water distribution network with multiple zones
+                - Contains numerous junctions, pipes, pumps, and tanks
+                - Suitable for advanced simulation and analysis
+                - Larger network for comprehensive testing
+                """)
+            elif selected_file == "NET_3.inp":
+                st.info("""
+                **NET_3.inp - Medium Distribution Network**
+                - Moderate-sized water distribution network
+                - Good balance of complexity and performance
+                - Contains junctions, pipes, pumps, and tanks
+                - Suitable for intermediate analysis and learning
+                """)
+            else:  # NET_4.inp
+                st.info("""
+                **NET_4.inp - Sample Distribution Network**
+                - Sample water distribution network
+                - Pre-configured for demonstration
+                - Contains junctions, pipes, pumps, and tanks
+                - Suitable for testing and learning
+                """)
+        
+        return selected_file
     
     else:
         # Custom file upload
