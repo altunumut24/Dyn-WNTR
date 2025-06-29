@@ -87,6 +87,15 @@ def create_stores():
         
         # Network metadata
         dcc.Store(id='network-metadata', data={}),
+        
+        # Batch simulation stores
+        dcc.Store(id='batch-events', data=[]),
+        dcc.Store(id='batch-metadata', data={}),
+        dcc.Store(id='batch-animation-running', data=False),
+        dcc.Store(id='batch-current-time', data=0),
+        dcc.Store(id='batch-simulation-data', data=initialize_simulation_data()),
+        dcc.Store(id='batch-applied-events', data=[]),
+        dcc.Store(id='batch-animation-speed', data=1.0),
     ]
 
 # Batch layout removed - to be implemented from scratch
@@ -114,10 +123,18 @@ def create_layout():
         # Status messages area
         html.Div(id="status-messages-area"),
         
-        # Main content area - directly show interactive mode
-        dbc.Row([dbc.Col([create_network_file_selector()])], className="mb-4"),
-        html.Div(id="network-status-display"),
-        html.Div(id="interactive-main-area"),
+        # Tab navigation
+        dbc.Row([
+            dbc.Col([
+                dbc.Tabs([
+                    dbc.Tab(label="🎮 Interactive Mode", tab_id="interactive-tab"),
+                    dbc.Tab(label="🎬 Batch Simulator", tab_id="batch-tab")
+                ], id="main-tabs", active_tab="interactive-tab", className="mb-4")
+            ])
+        ]),
+        
+        # Tab content
+        html.Div(id="tab-content"),
         
         # Footer
         html.Hr(),
@@ -170,7 +187,58 @@ def create_network_file_selector():
 # Set the app layout
 app.layout = create_layout()
 
-# Tab switching removed - showing interactive mode directly
+# Tab switching callback
+@app.callback(
+    Output('tab-content', 'children'),
+    Input('main-tabs', 'active_tab')
+)
+def render_tab_content(active_tab):
+    """Render content based on selected tab."""
+    if active_tab == "interactive-tab":
+        return create_interactive_content()
+    elif active_tab == "batch-tab":
+        return create_batch_content()
+    return "Select a tab"
+
+def create_interactive_content():
+    """Create the interactive mode content."""
+    return [
+        dbc.Row([dbc.Col([create_network_file_selector()])], className="mb-4"),
+        html.Div(id="network-status-display"),
+        html.Div(id="interactive-main-area")
+    ]
+
+def create_batch_content():
+    """Create the simplified batch simulator content."""
+    return [
+        # Network file selector (reused)
+        dbc.Row([dbc.Col([create_network_file_selector()])], className="mb-4"),
+        
+        # Simple batch controls
+        dbc.Row([
+            dbc.Col([
+                dbc.Card([
+                    dbc.CardHeader(html.H4("🎬 Batch Event Simulation")),
+                    dbc.CardBody([
+                        dbc.Alert([
+                            "This mode automatically processes events from ",
+                            html.Strong("generated_events_NET_4_20250629_155628.json"),
+                            " with animation controls."
+                        ], color="info", className="mb-3"),
+                        
+                        # Simple load button
+                        dbc.Button("📋 Load Example Events", id="load-events-btn", color="success", size="lg")
+                    ])
+                ])
+            ], width=12)
+        ], className="mb-4"),
+        
+        # Network status display (shared)
+        html.Div(id="batch-network-status-display"),
+        
+        # Batch simulation area
+        html.Div(id="batch-main-area")
+    ]
 
 # Callback for file source radio
 @app.callback(
@@ -186,6 +254,8 @@ def toggle_file_source(source):
     else:
         return {"display": "none"}, {"display": "block"}
 
+# Removed: Batch file source radio callback (no longer needed for simplified batch mode)
+
 # Callback for loading network
 @app.callback(
     [Output('network-loaded', 'data'),
@@ -195,10 +265,12 @@ def toggle_file_source(source):
      Output('flow-monitoring-links', 'data')],
     Input('load-network-btn', 'n_clicks'),
     [State('file-source-radio', 'value'),
-     State('example-network-select', 'value')],
+     State('example-network-select', 'value'),
+     State('upload-network-file', 'contents'),
+     State('upload-network-file', 'filename')],
     prevent_initial_call=True
 )
-def load_network_callback(n_clicks, source, example_file):
+def load_network_callback(n_clicks, source, example_file, upload_contents, upload_filename):
     """Load network model based on user selection."""
     if n_clicks is None or n_clicks == 0:
         return False, "", {}, [], []
@@ -206,13 +278,46 @@ def load_network_callback(n_clicks, source, example_file):
     try:
         # Handle source parameter safely
         source = source or "example"
-        file_path = example_file if source == "example" else None
+        wn = None
+        file_display_name = ""
         
-        if file_path is None:
+        if source == "example" and example_file:
+            # Load from example file
+            file_path = example_file
+            wn = load_network_model(file_path)
+            file_display_name = os.path.basename(file_path)
+            
+        elif source == "upload" and upload_contents and upload_filename:
+            # Load from uploaded file
+            try:
+                import base64
+                import tempfile
+                
+                # Decode the uploaded file
+                content_type, content_string = upload_contents.split(',')
+                decoded = base64.b64decode(content_string)
+                
+                # Save to temporary file
+                with tempfile.NamedTemporaryFile(mode='w', suffix='.inp', delete=False) as tmp_file:
+                    tmp_file.write(decoded.decode('utf-8'))
+                    temp_path = tmp_file.name
+                
+                # Load the network model from temporary file
+                wn = load_network_model(temp_path)
+                file_display_name = upload_filename
+                
+                # Clean up temporary file
+                if os.path.exists(temp_path):
+                    os.unlink(temp_path)
+            except Exception as upload_error:
+                error_msg = dbc.Alert(f"❌ Error processing uploaded file: {str(upload_error)}", color="danger")
+                return False, error_msg, {}, [], []
+        else:
             return False, dbc.Alert("❌ Please select a file", color="danger"), {}, [], []
         
         # Load the network model
-        wn = load_network_model(file_path)
+        if not wn:
+            return False, dbc.Alert("❌ Failed to load network file", color="danger"), {}, [], []
         
         if wn:
             # Store network in global state
@@ -224,7 +329,7 @@ def load_network_callback(n_clicks, source, example_file):
             
             # Create metadata for storage
             metadata = {
-                'file_path': file_path,
+                'file_path': file_display_name,
                 'node_count': len(wn.node_name_list),
                 'link_count': len(wn.link_name_list),
                 'node_names': list(wn.node_name_list),
@@ -235,8 +340,7 @@ def load_network_callback(n_clicks, source, example_file):
             initial_nodes = list(wn.node_name_list)[:5]
             initial_links = list(wn.link_name_list)[:5]
             
-            filename = os.path.basename(file_path)
-            success_msg = dbc.Alert(f"✅ Network '{filename}' loaded successfully!", 
+            success_msg = dbc.Alert(f"✅ Network '{file_display_name}' loaded successfully!", 
                                   color="success", dismissable=True)
             
             return True, success_msg, metadata, initial_nodes, initial_links
@@ -1358,6 +1462,725 @@ def update_current_values_display(current_time, sim_initialized, monitored_nodes
         
     except Exception as e:
         return html.P(f"Error: {str(e)}", className="text-danger small")
+
+# Simplified batch events loading callback
+@app.callback(
+    [Output('batch-events', 'data'),
+     Output('batch-metadata', 'data'),
+     Output('status-messages-area', 'children', allow_duplicate=True)],
+    Input('load-events-btn', 'n_clicks'),
+    prevent_initial_call=True
+)
+def load_batch_events(n_clicks):
+    """Load events from the example JSON file for batch simulation."""
+    if n_clicks is None or n_clicks == 0:
+        return [], {}, ""
+    
+    try:
+        # Load the specific example file
+        example_file = "generated_events_NET_4_20250629_155628.json"
+        
+        import json
+        with open(example_file, 'r') as f:
+            data = json.load(f)
+        
+        if 'events' in data and 'metadata' in data:
+            events = data['events']
+            metadata = data['metadata']
+        else:
+            events = data if isinstance(data, list) else []
+            metadata = {}
+        
+        if events:
+            success_msg = dbc.Alert(
+                f"✅ Loaded {len(events)} events from {example_file}! Duration: {metadata.get('duration_hours', 'N/A')} hours",
+                color="success", dismissable=True
+            )
+            return events, metadata, success_msg
+        else:
+            error_msg = dbc.Alert("❌ No events found in file", color="danger")
+            return [], {}, error_msg
+            
+    except Exception as e:
+        error_msg = dbc.Alert(f"❌ Error loading events: {str(e)}", color="danger")
+        return [], {}, error_msg
+
+# Batch simulation main area callback
+@app.callback(
+    Output('batch-main-area', 'children'),
+    [Input('network-loaded', 'data'),
+     Input('batch-events', 'data'),
+     Input('batch-metadata', 'data')],
+    prevent_initial_call=True
+)
+def display_batch_main_area(network_loaded, batch_events, batch_metadata):
+    """Display the main batch simulation area when network and events are loaded."""
+    if not network_loaded:
+        return dbc.Alert("👆 Please load a network file first", color="info")
+    
+    if not batch_events:
+        return dbc.Alert("📋 Please load event file to begin batch simulation", color="info")
+    
+    # Calculate total simulation duration from events
+    max_event_time = max([event.get('time', 0) for event in batch_events]) if batch_events else 3600
+    total_duration_hours = max_event_time / 3600 + 1  # Add 1 hour buffer
+    
+    return [
+        dbc.Row([
+            # Animation controls column
+            dbc.Col([
+                dbc.Card([
+                    dbc.CardHeader(html.H5("🎬 Animation Controls")),
+                    dbc.CardBody([
+                        # Animation status
+                        html.Div(id="batch-animation-status", className="mb-3"),
+                        
+                        # Progress bar
+                        html.Div(id="batch-progress-display", className="mb-3"),
+                        
+                        # Animation settings
+                        dbc.Row([
+                            dbc.Col([
+                                dbc.Label("Speed", className="fw-bold"),
+                                dbc.Select([
+                                    {"label": "0.5x", "value": 0.5},
+                                    {"label": "1x", "value": 1.0},
+                                    {"label": "2x", "value": 2.0},
+                                    {"label": "5x", "value": 5.0},
+                                    {"label": "10x", "value": 10.0}
+                                ], value=1.0, id="batch-speed-select")
+                            ], width=6),
+                            dbc.Col([
+                                dbc.Label("Step Size (min)", className="fw-bold"),
+                                dbc.Select([
+                                    {"label": "15 min", "value": 15},
+                                    {"label": "30 min", "value": 30},
+                                    {"label": "60 min", "value": 60},
+                                    {"label": "120 min", "value": 120}
+                                ], value=60, id="batch-timestep-select")
+                            ], width=6)
+                        ], className="mb-3"),
+                        
+                        # Control buttons
+                        dbc.ButtonGroup([
+                            dbc.Button("▶️ Play", id="batch-play-btn", color="success"),
+                            dbc.Button("⏸️ Pause", id="batch-pause-btn", color="warning"),
+                            dbc.Button("🔄 Reset", id="batch-reset-btn", color="secondary")
+                        ], className="w-100 mb-3"),
+                        
+                        # Quick jump
+                        dbc.Row([
+                            dbc.Col([
+                                dbc.Label("Jump to time (hours):", className="fw-bold"),
+                                dbc.Input(
+                                    type="number", value=0, min=0, 
+                                    max=int(total_duration_hours), step=1,
+                                    id="batch-jump-time-input"
+                                )
+                            ], width=8),
+                            dbc.Col([
+                                dbc.Button("⏭️ Jump", id="batch-jump-btn", color="info", className="mt-4")
+                            ], width=4)
+                        ])
+                    ])
+                ], className="mb-3"),
+                
+                # Event timeline
+                dbc.Card([
+                    dbc.CardHeader(html.H5("📅 Event Timeline")),
+                    dbc.CardBody([
+                        html.Div(id="batch-event-timeline")
+                    ])
+                ])
+            ], width=4),
+            
+            # Map and monitoring column
+            dbc.Col([
+                # Map controls
+                dbc.Card([
+                    dbc.CardBody([
+                        dbc.Alert("🎬 Batch simulation shows animated network changes over time", 
+                                color="info", className="mb-3"),
+                        dbc.Row([
+                            dbc.Col([
+                                dbc.Label("Map Height"),
+                                dbc.Select([
+                                    {"label": "600px", "value": 600},
+                                    {"label": "700px", "value": 700},
+                                    {"label": "800px", "value": 800}
+                                ], value=700, id="batch-map-height-select")
+                            ], width=6),
+                            dbc.Col([
+                                dbc.Label("Node Size"),
+                                dbc.Select([
+                                    {"label": "80%", "value": 0.8},
+                                    {"label": "100%", "value": 1.0},
+                                    {"label": "120%", "value": 1.2}
+                                ], value=1.0, id="batch-node-size-select")
+                            ], width=6)
+                        ])
+                    ])
+                ], className="mb-3"),
+                
+                # Network map
+                html.Div(id="batch-network-map-container"),
+                
+                # Color legends
+                html.Div(id="batch-color-legends-container")
+            ], width=8)
+        ]),
+        
+        # Results section
+        html.Hr(),
+        html.Div(id="batch-simulation-results-container"),
+        
+        # Animation interval component
+        dcc.Interval(
+            id='batch-animation-interval',
+            interval=2000,  # 2 seconds default
+            n_intervals=0,
+            disabled=True
+        )
+    ]
+
+# Batch animation control callbacks
+@app.callback(
+    [Output('batch-animation-running', 'data'),
+     Output('batch-animation-interval', 'disabled')],
+    [Input('batch-play-btn', 'n_clicks'),
+     Input('batch-pause-btn', 'n_clicks')],
+    State('batch-animation-running', 'data'),
+    prevent_initial_call=True
+)
+def control_batch_animation(play_clicks, pause_clicks, is_running):
+    """Control batch animation play/pause."""
+    ctx_triggered = ctx.triggered[0]['prop_id'] if ctx.triggered else ""
+    
+    print(f"Batch animation control triggered: {ctx_triggered}, is_running: {is_running}")
+    
+    if 'batch-play-btn' in ctx_triggered:
+        print("Play button clicked - starting animation")
+        return True, False  # Start animation
+    elif 'batch-pause-btn' in ctx_triggered:
+        print("Pause button clicked - pausing animation")
+        return False, True  # Pause animation
+    
+    return is_running or False, not (is_running or False)
+
+# Batch animation reset callback
+@app.callback(
+    [Output('batch-current-time', 'data'),
+     Output('batch-simulation-data', 'data', allow_duplicate=True),
+     Output('batch-applied-events', 'data', allow_duplicate=True),
+     Output('batch-animation-running', 'data', allow_duplicate=True),
+     Output('batch-animation-interval', 'disabled', allow_duplicate=True)],
+    Input('batch-reset-btn', 'n_clicks'),
+    State('network-loaded', 'data'),
+    prevent_initial_call=True
+)
+def reset_batch_animation(n_clicks, network_loaded):
+    """Reset batch animation to start."""
+    if not n_clicks or not network_loaded:
+        return no_update, no_update, no_update, no_update, no_update
+    
+    try:
+        # Reset simulation state and re-initialize for batch mode
+        if global_state['wn'] is not None:
+            from modules.simulation import reset_simulation_state, initialize_simulation_data
+            from mwntr.sim.interactive_network_simulator import MWNTRInteractiveSimulator
+            
+            # Create fresh simulator instance
+            global_state['sim'] = MWNTRInteractiveSimulator(global_state['wn'])
+            
+            # Initialize the simulator with proper settings for batch mode
+            duration_seconds = 24 * 3600  # 24 hours default
+            timestep_seconds = 60 * 60   # 1 hour timestep
+            
+            global_state['sim'].init_simulation(
+                global_timestep=timestep_seconds,
+                duration=duration_seconds
+            )
+        
+        return 0, initialize_simulation_data(), [], False, True
+    except Exception as e:
+        print(f"Error resetting batch animation: {e}")
+        return no_update, no_update, no_update, no_update, no_update
+
+# Batch animation step callback (triggered by interval)
+@app.callback(
+    [Output('batch-current-time', 'data', allow_duplicate=True),
+     Output('batch-simulation-data', 'data', allow_duplicate=True),
+     Output('batch-applied-events', 'data', allow_duplicate=True),
+     Output('status-messages-area', 'children', allow_duplicate=True)],
+    Input('batch-animation-interval', 'n_intervals'),
+    [State('batch-animation-running', 'data'),
+     State('batch-current-time', 'data'),
+     State('batch-simulation-data', 'data'),
+     State('batch-events', 'data'),
+     State('batch-applied-events', 'data'),
+     State('batch-timestep-select', 'value'),
+     State('network-loaded', 'data'),
+     State('pressure-monitoring-nodes', 'data'),
+     State('flow-monitoring-links', 'data')],
+    prevent_initial_call=True
+)
+def batch_animation_step(n_intervals, is_running, current_time, sim_data, batch_events, 
+                        applied_events, timestep_minutes, network_loaded, monitored_nodes, monitored_links):
+    """Process one step of batch animation."""
+    print(f"Batch animation step: n_intervals={n_intervals}, is_running={is_running}, current_time={current_time}")
+    
+    if not is_running:
+        return no_update, no_update, no_update, no_update
+    
+    if not network_loaded or not batch_events:
+        error_msg = dbc.Alert("❌ Network or events not loaded", color="danger", dismissable=True)
+        return no_update, no_update, no_update, [error_msg]
+    
+    if global_state['sim'] is None or global_state['wn'] is None:
+        error_msg = dbc.Alert("❌ Simulation not initialized", color="danger", dismissable=True)
+        return no_update, no_update, no_update, [error_msg]
+    
+    try:
+        from modules.simulation import apply_event_to_simulator, run_simulation_step, collect_simulation_data, initialize_simulation_data
+        
+        sim = global_state['sim']
+        wn = global_state['wn']
+        
+        # Initialize variables
+        current_time = current_time or 0
+        sim_data = sim_data or initialize_simulation_data()
+        applied_events = applied_events or []
+        timestep_seconds = (timestep_minutes or 60) * 60
+        status_messages = []
+        
+        # Apply events that are due at current time
+        events_to_apply = [e for e in batch_events 
+                          if e.get('time', 0) <= current_time and e not in applied_events]
+        
+        new_applied_events = list(applied_events)
+        
+        for event in events_to_apply:
+            success, message = apply_event_to_simulator(sim, wn, event)
+            if success:
+                new_applied_events.append(event)
+                status_messages.append(dbc.Alert(f"⚡ Applied: {event['description']}", color="success", dismissable=True))
+            else:
+                status_messages.append(dbc.Alert(f"❌ Failed: {message}", color="danger", dismissable=True))
+        
+        # Run simulation step
+        success, new_sim_time, message = run_simulation_step(sim, wn)
+        
+        if success:
+            # Update simulation data
+            new_sim_data = dict(sim_data)
+            new_sim_data['time'].append(new_sim_time)
+            
+            # Collect data for monitored elements
+            monitored_nodes = monitored_nodes or list(wn.node_name_list)[:5]
+            monitored_links = monitored_links or list(wn.link_name_list)[:5]
+            collect_simulation_data(wn, monitored_nodes, monitored_links, new_sim_data)
+            
+            return new_sim_time, new_sim_data, new_applied_events, status_messages
+        else:
+            return current_time, sim_data, new_applied_events, status_messages
+            
+    except Exception as e:
+        error_msg = dbc.Alert(f"❌ Animation step error: {str(e)}", color="danger", dismissable=True)
+        return no_update, no_update, no_update, [error_msg]
+
+# Batch animation speed control callback
+@app.callback(
+    Output('batch-animation-interval', 'interval'),
+    Input('batch-speed-select', 'value'),
+    prevent_initial_call=True
+)
+def update_animation_speed(speed):
+    """Update animation interval based on speed selection."""
+    base_interval = 2000  # 2 seconds base
+    speed_value = float(speed) if speed else 1.0
+    return int(base_interval / speed_value)
+
+# Batch animation status callback
+@app.callback(
+    Output('batch-animation-status', 'children'),
+    [Input('batch-animation-running', 'data'),
+     Input('batch-current-time', 'data')],
+    prevent_initial_call=True
+)
+def update_batch_animation_status(is_running, current_time):
+    """Update animation status display."""
+    time_display = str(datetime.timedelta(seconds=int(current_time or 0)))
+    
+    if is_running:
+        return dbc.Alert(f"▶️ Playing | Time: {time_display}", color="success")
+    else:
+        return dbc.Alert(f"⏸️ Paused | Time: {time_display}", color="warning")
+
+# Batch progress display callback
+@app.callback(
+    Output('batch-progress-display', 'children'),
+    [Input('batch-current-time', 'data'),
+     Input('batch-events', 'data'),
+     Input('batch-applied-events', 'data')],
+    prevent_initial_call=True
+)
+def update_batch_progress(current_time, batch_events, applied_events):
+    """Update batch simulation progress display."""
+    if not batch_events:
+        return ""
+    
+    # Calculate progress
+    max_time = max([event.get('time', 0) for event in batch_events]) if batch_events else 3600
+    time_progress = min((current_time or 0) / max_time, 1.0) if max_time > 0 else 0
+    events_progress = len(applied_events or []) / len(batch_events) if batch_events else 0
+    
+    current_time_display = str(datetime.timedelta(seconds=int(current_time or 0)))
+    max_time_display = str(datetime.timedelta(seconds=int(max_time)))
+    
+    return [
+        html.Small(f"Time: {current_time_display} / {max_time_display}", className="text-muted"),
+        dbc.Progress(
+            value=time_progress*100,
+            label=f"{time_progress*100:.1f}%",
+            color="primary",
+            className="mb-2"
+        ),
+        html.Small(f"Events: {len(applied_events or [])} / {len(batch_events)}", className="text-muted"),
+        dbc.Progress(
+            value=events_progress*100,
+            label=f"{len(applied_events or [])} events",
+            color="info"
+        )
+    ]
+
+# Batch event timeline callback
+@app.callback(
+    Output('batch-event-timeline', 'children'),
+    [Input('batch-events', 'data'),
+     Input('batch-current-time', 'data'),
+     Input('batch-applied-events', 'data')],
+    prevent_initial_call=True
+)
+def update_batch_event_timeline(batch_events, current_time, applied_events):
+    """Create event timeline visualization for batch mode."""
+    if not batch_events:
+        return "No events loaded"
+    
+    try:
+        from modules.visualization import display_event_timeline
+        
+        # Create timeline figure
+        fig = go.Figure()
+        
+        # Group events by type for color coding
+        event_types = {}
+        applied_event_ids = [str(e.get('time', 0)) + e.get('element_name', '') for e in (applied_events or [])]
+        
+        for i, event in enumerate(batch_events):
+            event_type = event['event_type']
+            if event_type not in event_types:
+                event_types[event_type] = {'times': [], 'names': [], 'applied': []}
+            
+            event_id = str(event.get('time', 0)) + event.get('element_name', '')
+            event_types[event_type]['times'].append(event['time'])
+            event_types[event_type]['names'].append(event['element_name'])
+            event_types[event_type]['applied'].append(event_id in applied_event_ids)
+        
+        # Color map for different event types
+        colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd']
+        
+        for i, (event_type, data) in enumerate(event_types.items()):
+            # Applied events (filled markers)
+            applied_times = [t for t, applied in zip(data['times'], data['applied']) if applied]
+            applied_names = [n for n, applied in zip(data['names'], data['applied']) if applied]
+            
+            if applied_times:
+                fig.add_trace(go.Scatter(
+                    x=applied_times,
+                    y=[event_type] * len(applied_times),
+                    mode='markers',
+                    marker=dict(size=10, color=colors[i % len(colors)], symbol='circle'),
+                    text=[f"{event_type}<br>Element: {name}<br>Time: {t}s (APPLIED)" 
+                          for t, name in zip(applied_times, applied_names)],
+                    hovertemplate='%{text}<extra></extra>',
+                    name=f"{event_type} (Applied)",
+                    showlegend=False
+                ))
+            
+            # Pending events (outlined markers)
+            pending_times = [t for t, applied in zip(data['times'], data['applied']) if not applied]
+            pending_names = [n for n, applied in zip(data['names'], data['applied']) if not applied]
+            
+            if pending_times:
+                fig.add_trace(go.Scatter(
+                    x=pending_times,
+                    y=[event_type] * len(pending_times),
+                    mode='markers',
+                    marker=dict(size=8, color='white', line=dict(color=colors[i % len(colors)], width=2)),
+                    text=[f"{event_type}<br>Element: {name}<br>Time: {t}s (PENDING)" 
+                          for t, name in zip(pending_times, pending_names)],
+                    hovertemplate='%{text}<extra></extra>',
+                    name=event_type,
+                    showlegend=True
+                ))
+        
+        # Add current time line
+        if current_time and current_time > 0:
+            fig.add_vline(
+                x=current_time,
+                line=dict(color="red", width=3, dash="dash"),
+                annotation_text=f"Current: {current_time}s"
+            )
+        
+        fig.update_layout(
+            title="Event Timeline",
+            xaxis_title="Time (seconds)",
+            yaxis_title="Event Type",
+            height=300,
+            hovermode='closest',
+            margin=dict(l=10, r=10, t=30, b=10)
+        )
+        
+        return dcc.Graph(figure=fig, style={"height": "300px"})
+        
+    except Exception as e:
+        return dbc.Alert(f"Error creating timeline: {str(e)}", color="danger")
+
+# Batch network map callback
+@app.callback(
+    [Output('batch-network-map-container', 'children'),
+     Output('batch-color-legends-container', 'children')],
+    [Input('network-loaded', 'data'),
+     Input('batch-map-height-select', 'value'),
+     Input('batch-node-size-select', 'value'),
+     Input('batch-current-time', 'data'),
+     Input('batch-simulation-data', 'data')],
+    prevent_initial_call=True
+)
+def update_batch_network_map(network_loaded, map_height, node_size, current_time, simulation_data):
+    """Update batch simulation network map."""
+    try:
+        if not network_loaded or global_state['wn'] is None:
+            return "", ""
+        
+        wn = global_state['wn']
+        
+        # Create network plot using existing visualization module
+        fig = create_network_plot(
+            wn,
+            [],  # No manual selections in batch mode
+            [],
+            show_simulation_data=True,
+            sim_initialized=True,
+            height=map_height or 700,
+            node_size_scale=node_size or 1.0
+        )
+        
+        map_component = dcc.Graph(id="batch-network-graph", figure=fig)
+        
+        # Create color legends
+        pressure_fig = create_pressure_colorbar(0, 100)  # Default range
+        flow_fig = create_flow_colorbar(-10, 10)  # Default range
+        
+        legends = dbc.Row([
+            dbc.Col([
+                dcc.Graph(figure=pressure_fig, style={"height": "120px"})
+            ], width=6),
+            dbc.Col([
+                dcc.Graph(figure=flow_fig, style={"height": "120px"})
+            ], width=6)
+        ])
+        
+        return map_component, legends
+    except Exception as e:
+        print(f"Error in update_batch_network_map: {e}")
+        return dbc.Alert(f"Error updating map: {str(e)}", color="danger"), ""
+
+# Batch simulation results callback
+@app.callback(
+    Output('batch-simulation-results-container', 'children'),
+    [Input('batch-simulation-data', 'data'),
+     Input('batch-current-time', 'data'),
+     Input('pressure-monitoring-nodes', 'data'),
+     Input('flow-monitoring-links', 'data')],
+    prevent_initial_call=True
+)
+def update_batch_simulation_results(sim_data, current_time, monitored_nodes, monitored_links):
+    """Update batch simulation monitoring charts."""
+    if not sim_data or not monitored_nodes and not monitored_links:
+        return dbc.Alert("🚀 Start animation to see real-time monitoring charts", color="info")
+    
+    try:
+        # Create monitoring charts
+        fig_pressure, fig_flow = create_monitoring_charts(sim_data, monitored_nodes or [], monitored_links or [])
+        
+        # Current time display
+        time_display = f"⏱️ Current Time: {datetime.timedelta(seconds=int(current_time or 0))}"
+        
+        return [
+            dbc.Row([
+                dbc.Col([
+                    html.H4("📊 Real-Time Monitoring", className="text-primary"),
+                ], width=8),
+                dbc.Col([
+                    html.H6(time_display, className="text-muted text-end")
+                ], width=4)
+            ], className="mb-3"),
+            
+            dbc.Row([
+                dbc.Col([
+                    dcc.Graph(figure=fig_pressure, style={"height": "350px"}) if fig_pressure else 
+                    dbc.Alert("📍 No pressure data available", color="info")
+                ], width=12)
+            ], className="mb-3"),
+            
+            dbc.Row([
+                dbc.Col([
+                    dcc.Graph(figure=fig_flow, style={"height": "350px"}) if fig_flow else 
+                    dbc.Alert("🔗 No flow data available", color="info")
+                ], width=12)
+            ])
+        ]
+        
+    except Exception as e:
+        return dbc.Alert(f"Error displaying charts: {str(e)}", color="danger")
+
+# Batch network status display callback
+@app.callback(
+    Output('batch-network-status-display', 'children'),
+    [Input('network-loaded', 'data'),
+     Input('network-metadata', 'data'),
+     Input('batch-events', 'data'),
+     Input('batch-applied-events', 'data'),
+     Input('batch-current-time', 'data')],
+    prevent_initial_call=True
+)
+def display_batch_network_status(network_loaded, metadata, batch_events, applied_events, current_time):
+    """Display network status for batch mode."""
+    if not network_loaded or not metadata:
+        return ""
+    
+    return dbc.Card([
+        dbc.CardHeader(html.H4("📊 Batch Simulation Status")),
+        dbc.CardBody([
+            dbc.Row([
+                dbc.Col([
+                    html.H5(str(metadata['node_count']), className="text-primary"),
+                    html.P("Total Nodes", className="mb-0")
+                ], width=3),
+                dbc.Col([
+                    html.H5(str(metadata['link_count']), className="text-primary"),
+                    html.P("Total Links", className="mb-0")
+                ], width=3),
+                dbc.Col([
+                    html.H5(str(len(batch_events or [])), className="text-primary"),
+                    html.P("Total Events", className="mb-0"),
+                    html.Small(f"{len(applied_events or [])} applied", className="text-muted")
+                ], width=3),
+                dbc.Col([
+                    html.H5(str(datetime.timedelta(seconds=int(current_time or 0))), className="text-primary"),
+                    html.P("Current Time", className="mb-0")
+                ], width=3)
+            ])
+        ])
+    ], className="mb-4")
+
+# Batch simulation initialization callback
+@app.callback(
+    [Output('batch-simulation-data', 'data', allow_duplicate=True),
+     Output('pressure-monitoring-nodes', 'data', allow_duplicate=True),
+     Output('flow-monitoring-links', 'data', allow_duplicate=True),
+     Output('status-messages-area', 'children', allow_duplicate=True)],
+    [Input('network-loaded', 'data'),
+     Input('batch-events', 'data')],
+    State('network-metadata', 'data'),
+    prevent_initial_call=True
+)
+def initialize_batch_simulation(network_loaded, batch_events, metadata):
+    """Initialize batch simulation when network and events are loaded."""
+    if not network_loaded or not batch_events or not metadata:
+        return no_update, no_update, no_update, no_update
+    
+    try:
+        # Initialize simulation if needed
+        if global_state['wn'] is not None:
+            from mwntr.sim.interactive_network_simulator import MWNTRInteractiveSimulator
+            global_state['sim'] = MWNTRInteractiveSimulator(global_state['wn'])
+            
+            # Initialize the simulator with proper settings
+            duration_seconds = 24 * 3600  # 24 hours default
+            timestep_seconds = 60 * 60   # 1 hour timestep
+            
+            # Get max event time to set proper duration
+            if batch_events:
+                max_event_time = max([event.get('time', 0) for event in batch_events])
+                duration_seconds = max(max_event_time + 3600, duration_seconds)  # Add 1 hour buffer
+            
+            global_state['sim'].init_simulation(
+                global_timestep=timestep_seconds,
+                duration=duration_seconds
+            )
+        
+        # Initialize monitoring with first few elements
+        initial_nodes = metadata.get('node_names', [])[:5]
+        initial_links = metadata.get('link_names', [])[:5]
+        
+        # Success message
+        success_msg = dbc.Alert(
+            "🚀 Batch simulation initialized! Click Play to start animation.",
+            color="success", dismissable=True
+        )
+        
+        return initialize_simulation_data(), initial_nodes, initial_links, success_msg
+        
+    except Exception as e:
+        error_msg = dbc.Alert(f"❌ Error initializing batch simulation: {str(e)}", color="danger")
+        print(f"Error initializing batch simulation: {e}")
+        return no_update, no_update, no_update, error_msg
+
+# Add Jump functionality
+@app.callback(
+    [Output('batch-current-time', 'data', allow_duplicate=True),
+     Output('batch-simulation-data', 'data', allow_duplicate=True),
+     Output('batch-applied-events', 'data', allow_duplicate=True)],
+    Input('batch-jump-btn', 'n_clicks'),
+    [State('batch-jump-time-input', 'value'),
+     State('batch-events', 'data'),
+     State('network-loaded', 'data')],
+    prevent_initial_call=True
+)
+def handle_batch_jump(n_clicks, jump_hours, batch_events, network_loaded):
+    """Handle jump to specific time in batch simulation."""
+    if not n_clicks or not jump_hours or not batch_events or not network_loaded:
+        return no_update, no_update, no_update
+    
+    try:
+        jump_seconds = jump_hours * 3600
+        
+        # Reset simulation to start
+        if global_state['wn'] is not None:
+            from modules.simulation import reset_simulation_state, initialize_simulation_data
+            global_state['sim'] = reset_simulation_state(global_state['wn'])
+        
+        # Apply all events up to jump time without running simulation steps
+        events_to_apply = [e for e in batch_events if e.get('time', 0) <= jump_seconds]
+        applied_events = []
+        
+        if global_state['sim'] and global_state['wn']:
+            from modules.simulation import apply_event_to_simulator
+            sim = global_state['sim']
+            wn = global_state['wn']
+            
+            for event in events_to_apply:
+                success, message = apply_event_to_simulator(sim, wn, event)
+                if success:
+                    applied_events.append(event)
+        
+        return jump_seconds, initialize_simulation_data(), applied_events
+        
+    except Exception as e:
+        print(f"Error jumping to time: {e}")
+        return no_update, no_update, no_update
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=8050)
