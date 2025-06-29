@@ -107,6 +107,12 @@ def create_layout():
         # Store components
         html.Div(create_stores()),
         
+        # Hidden monitoring dropdowns for automatic selection
+        html.Div([
+            dcc.Dropdown(id="pressure-nodes-dropdown", multi=True, style={"display": "none"}),
+            dcc.Dropdown(id="flow-links-dropdown", multi=True, style={"display": "none"})
+        ], style={"display": "none"}),
+        
         # Main title
         dbc.Row([
             dbc.Col([
@@ -383,13 +389,16 @@ def display_interactive_main(network_loaded, metadata):
                 html.Div(id="color-legends-container")
             ], width=8),
             
-            # Control panel column
+            # Control panel column (simplified)
             dbc.Col([
                 # Simulation controls
                 dbc.Card([
                     dbc.CardHeader(html.H5("⚡ Simulation Controls")),
                     dbc.CardBody([
                         html.Div(id="sim-status"),
+                        
+                        # Simulation progress
+                        html.Div(id="simulation-progress-display", className="mb-3"),
                         
                         # Planning controls
                         dbc.Row([
@@ -416,42 +425,7 @@ def display_interactive_main(network_loaded, metadata):
                             dbc.Button("🔄 Reset", id="reset-btn", color="secondary")
                         ], className="w-100")
                     ])
-                ], className="mb-3"),
-                
-                # Element configuration
-                dbc.Card([
-                    dbc.CardHeader(html.H5("🎯 Element Configuration")),
-                    dbc.CardBody([
-                        html.Div(id="element-selection-display"),
-                        html.Hr(),
-                        html.Div(id="element-properties-display"),
-                        html.Hr(),
-                        html.Div(id="event-configuration-form")
-                    ])
-                ], className="mb-3"),
-                
-                # Monitoring controls
-                dbc.Card([
-                    dbc.CardHeader(html.H5("📊 Monitoring Controls")),
-                    dbc.CardBody([
-                        dbc.Row([
-                            dbc.Col([
-                                dbc.Label("Monitor Node Pressures 🔵", className="fw-bold"),
-                                dcc.Dropdown(id="pressure-nodes-dropdown", 
-                                           multi=True, 
-                                           placeholder="Select nodes to monitor...",
-                                           style={"fontSize": "14px"})
-                            ], width=12, className="mb-3"),
-                            dbc.Col([
-                                dbc.Label("Monitor Link Flows 🔗", className="fw-bold"),
-                                dcc.Dropdown(id="flow-links-dropdown", 
-                                           multi=True, 
-                                           placeholder="Select links to monitor...",
-                                           style={"fontSize": "14px"})
-                            ], width=12)
-                        ])
-                    ])
-                ])
+                ], className="mb-3")
             ], width=4)
         ]),
         
@@ -814,47 +788,96 @@ def update_step_button(sim_initialized):
     """Enable/disable step button based on simulation state."""
     return not (sim_initialized or False)
 
-# Element selection display callback
+# Simulation progress display callback
 @app.callback(
-    [Output('element-selection-display', 'children'),
-     Output('element-properties-display', 'children'),
-     Output('event-configuration-form', 'children')],
-    Input('current-element', 'data'),
-    State('network-loaded', 'data'),
+    Output('simulation-progress-display', 'children'),
+    [Input('sim-initialized', 'data'),
+     Input('current-sim-time', 'data'),
+     Input('simulation-data', 'data')],
+    [State('duration-input', 'value'),
+     State('timestep-select', 'value')],
     prevent_initial_call=True
 )
-def update_element_display(current_element, network_loaded):
-    """Update element selection and configuration display."""
-    if not network_loaded or not current_element or global_state['wn'] is None:
-        return [
-            dbc.Alert("👆 Select an element from the network map to configure events", color="info")
-        ], [], []
+def update_simulation_progress(sim_initialized, current_time, sim_data, duration_hours, timestep_minutes):
+    """Display professional simulation progress bar."""
+    if not sim_initialized:
+        return dbc.Alert("🎯 Initialize simulation to see progress", color="info", className="text-center")
     
     try:
-        wn = global_state['wn']
-        element_name = current_element['name']
-        element_type = current_element['type']
-        element_category = current_element['category']
+        import datetime
         
-        # Selection display
-        selection_display = [
-            dbc.Alert(f"Selected: {element_name}", color="success"),
-            html.P(f"Type: {element_type} ({element_category})")
+        # Calculate simulation parameters
+        total_duration_seconds = (duration_hours or 24) * 3600
+        timestep_seconds = (timestep_minutes or 60) * 60
+        current_time = current_time or 0
+        
+        # Calculate progress
+        time_progress = min(current_time / total_duration_seconds, 1.0)
+        completed_steps = len((sim_data or {}).get('time', []))
+        planned_total_steps = int(total_duration_seconds / timestep_seconds)
+        step_progress = min(completed_steps / planned_total_steps, 1.0) if planned_total_steps > 0 else 0
+        
+        # Time displays
+        current_time_display = str(datetime.timedelta(seconds=int(current_time)))
+        total_time_display = str(datetime.timedelta(seconds=int(total_duration_seconds)))
+        remaining_time = max(0, total_duration_seconds - current_time)
+        remaining_time_display = str(datetime.timedelta(seconds=int(remaining_time)))
+        
+        # Progress components
+        progress_components = [
+            html.H6("📊 Simulation Progress", className="text-primary mb-3"),
+            
+            # Progress metrics row
+            dbc.Row([
+                dbc.Col([
+                    html.H6(f"{time_progress*100:.1f}%", className="text-success mb-0"),
+                    html.Small("Complete", className="text-muted")
+                ], width=3),
+                dbc.Col([
+                    html.H6(f"{completed_steps}", className="text-primary mb-0"),
+                    html.Small("Steps Done", className="text-muted")
+                ], width=3),
+                dbc.Col([
+                    html.H6(current_time_display, className="text-info mb-0"),
+                    html.Small("Current Time", className="text-muted")
+                ], width=3),
+                dbc.Col([
+                    html.H6(remaining_time_display, className="text-warning mb-0"),
+                    html.Small("Remaining", className="text-muted")
+                ], width=3)
+            ], className="mb-3"),
+            
+            # Progress bars
+            html.Div([
+                html.Small(f"Time Progress: {current_time_display} / {total_time_display}", className="text-muted"),
+                dbc.Progress(
+                    value=time_progress*100, 
+                    label=f"{time_progress*100:.1f}%",
+                    color="success" if time_progress > 0.8 else "warning" if time_progress > 0.5 else "primary",
+                    className="mb-2"
+                ),
+                html.Small(f"Step Progress: {completed_steps} / {planned_total_steps}", className="text-muted"),
+                dbc.Progress(
+                    value=step_progress*100,
+                    label=f"{completed_steps} steps",
+                    color="info",
+                    className="mb-2"
+                )
+            ])
         ]
         
-        # Properties display
-        from modules.dash_ui_components import create_element_properties_display
-        properties_display = create_element_properties_display(wn, element_name, element_type)
+        # Add completion message if done
+        if time_progress >= 1.0:
+            progress_components.append(
+                dbc.Alert("🎉 Simulation Complete!", color="success", className="mt-2")
+            )
         
-        # Event configuration form
-        from modules.dash_ui_components import create_event_configuration_form
-        event_form = create_event_configuration_form(element_name, element_type, element_category)
-        
-        return selection_display, properties_display, event_form
+        return progress_components
         
     except Exception as e:
-        error_msg = dbc.Alert(f"Error displaying element info: {str(e)}", color="danger")
-        return [error_msg], [], []
+        return dbc.Alert(f"Error calculating progress: {str(e)}", color="danger")
+
+
 
 # Real-time monitoring charts display callback
 @app.callback(
@@ -952,7 +975,7 @@ def update_simulation_results(sim_data, current_time, sim_initialized, monitored
     except Exception as e:
         return dbc.Alert(f"Error displaying monitoring charts: {str(e)}", color="danger")
 
-# Dynamic event parameters callback
+# Enhanced dynamic event parameters callback
 @app.callback(
     Output({'type': 'event-params-container', 'element': MATCH}, 'children'),
     Input({'type': 'event-type-select', 'element': MATCH}, 'value'),
@@ -960,52 +983,213 @@ def update_simulation_results(sim_data, current_time, sim_initialized, monitored
     prevent_initial_call=True
 )
 def update_event_parameters(event_type, current_element):
-    """Generate dynamic parameter inputs based on selected event type."""
+    """Generate dynamic parameter inputs based on selected event type with all possible parameters."""
     if not event_type or not current_element:
         return []
     
     try:
-        from modules.simulation import get_available_events
+        # Complete parameter definitions for ALL event types from MWNTR codebase
+        event_parameters = {
+            # Node Events - Junction Events
+            'start_leak': {
+                'params': ['leak_area', 'leak_discharge_coefficient'],
+                'defaults': [0.01, 0.75],
+                'descriptions': [
+                    'Leak area in square meters (m²) - physical size of hole/crack',
+                    'Discharge coefficient (0-1) - orifice efficiency, 0.75 is standard for sharp-edged orifices'
+                ],
+                'types': ['number', 'number'],
+                'steps': [0.001, 0.01]
+            },
+            'stop_leak': {
+                'params': [],
+                'defaults': [],
+                'descriptions': [],
+                'types': [],
+                'steps': []
+            },
+            'add_demand': {
+                'params': ['base_demand', 'pattern_name', 'category'],
+                'defaults': [0.1, 'default_pattern', 'user_added'],
+                'descriptions': [
+                    'Base water demand in cubic meters per second (m³/s) - baseline consumption rate',
+                    'Pattern name for demand multipliers over time - references existing or creates new pattern',
+                    'Demand category for grouping (e.g., "residential", "industrial") - used for organization'
+                ],
+                'types': ['number', 'text', 'text'],
+                'steps': [0.001, None, None]
+            },
+            'remove_demand': {
+                'params': ['name'],
+                'defaults': ['user_added'],
+                'descriptions': [
+                    'Pattern name or category of demand to remove - must match existing demand entry'
+                ],
+                'types': ['text'],
+                'steps': [None]
+            },
+            'add_fire_fighting_demand': {
+                'params': ['fire_flow_demand', 'fire_start', 'fire_end'],
+                'defaults': [0.5, 300, 1800],
+                'descriptions': [
+                    'Fire flow demand in m³/s - high water consumption for fire suppression (typically 0.1-1.0)',
+                    'Fire start time in seconds from simulation start - when fire fighting begins',
+                    'Fire end time in seconds from simulation start - when fire fighting ends'
+                ],
+                'types': ['number', 'number', 'number'],
+                'steps': [0.01, 60, 60]
+            },
+            
+            # Node Events - Tank Events  
+            'set_tank_head': {
+                'params': ['head'],
+                'defaults': [50.0],
+                'descriptions': [
+                    'Tank water level in meters (m) - absolute height from tank bottom'
+                ],
+                'types': ['number'],
+                'steps': [1.0]
+            },
+            
+            # Link Events - Pipe Events
+            'close_pipe': {
+                'params': [],
+                'defaults': [],
+                'descriptions': [],
+                'types': [],
+                'steps': []
+            },
+            'open_pipe': {
+                'params': [],
+                'defaults': [],
+                'descriptions': [],
+                'types': [],
+                'steps': []
+            },
+            'set_pipe_diameter': {
+                'params': ['diameter'],
+                'defaults': [0.3],
+                'descriptions': [
+                    'Internal pipe diameter in meters (m) - affects flow capacity and pressure loss'
+                ],
+                'types': ['number'],
+                'steps': [0.01]
+            },
+            
+            # Link Events - Pump Events
+            'close_pump': {
+                'params': [],
+                'defaults': [],
+                'descriptions': [],
+                'types': [],
+                'steps': []
+            },
+            'open_pump': {
+                'params': [],
+                'defaults': [],
+                'descriptions': [],
+                'types': [],
+                'steps': []
+            },
+            'set_pump_speed': {
+                'params': ['speed'],
+                'defaults': [1.0],
+                'descriptions': [
+                    'Pump speed multiplier - 1.0 = normal speed, 0.5 = half speed, 1.5 = 150% speed'
+                ],
+                'types': ['number'],
+                'steps': [0.1]
+            },
+            'set_pump_head_curve': {
+                'params': ['head_curve'],
+                'defaults': ['pump_head_curve_1'],
+                'descriptions': [
+                    'Head curve name defining pump performance - must exist in network or be created'
+                ],
+                'types': ['text'],
+                'steps': [None]
+            },
+            
+            # Link Events - Valve Events
+            'close_valve': {
+                'params': [],
+                'defaults': [],
+                'descriptions': [],
+                'types': [],
+                'steps': []
+            },
+            'open_valve': {
+                'params': [],
+                'defaults': [],
+                'descriptions': [],
+                'types': [],
+                'steps': []
+            }
+        }
         
-        # Get available events for this element
-        available_events = get_available_events(current_element['type'], current_element['category'])
+        if event_type not in event_parameters:
+            return [dbc.Alert(f"Event type {event_type} not configured", color="warning")]
         
-        if event_type not in available_events:
-            return [dbc.Alert(f"Event type {event_type} not available", color="warning")]
-        
-        event_config = available_events[event_type]
-        params = event_config.get('params', [])
-        defaults = event_config.get('defaults', [])
+        event_config = event_parameters[event_type]
+        params = event_config['params']
+        defaults = event_config['defaults']
+        descriptions = event_config['descriptions']
+        types = event_config['types']
+        steps = event_config['steps']
         
         if not params:
-            return [dbc.Alert("This event requires no additional parameters", color="info")]
+            return [dbc.Alert("✅ This event requires no additional parameters", color="success")]
         
-        # Create input fields for each parameter
-        param_inputs = []
+        # Create enhanced input fields for each parameter
+        param_inputs = [html.H6("📝 Event Parameters", className="text-primary mt-3 mb-2")]
+        
         for i, param_name in enumerate(params):
             default_value = defaults[i] if i < len(defaults) else ""
+            description = descriptions[i] if i < len(descriptions) else param_name.replace('_', ' ').title()
+            input_type = types[i] if i < len(types) else 'text'
+            step = steps[i] if i < len(steps) else None
             
-            # Determine input type based on parameter name
-            if isinstance(default_value, (int, float)):
-                input_type = "number"
-                step = 0.01 if isinstance(default_value, float) else 1
+            # Create parameter input with enhanced styling
+            if input_type == 'number':
                 param_input = dbc.Input(
-                    type=input_type,
+                    type="number",
                     value=default_value,
                     step=step,
-                    id={"type": f"param-{param_name}", "element": current_element['name']}
+                    id={"type": f"param-{param_name}", "element": current_element['name']},
+                    className="mb-2"
                 )
             else:
+                # Handle None values and provide proper default display
+                display_value = ""
+                if default_value is not None:
+                    display_value = str(default_value)
+                
                 param_input = dbc.Input(
                     type="text",
-                    value=str(default_value) if default_value is not None else "",
-                    id={"type": f"param-{param_name}", "element": current_element['name']}
+                    value=display_value,
+                    placeholder=f"Enter {param_name.replace('_', ' ').lower()}..." if not display_value else None,
+                    id={"type": f"param-{param_name}", "element": current_element['name']},
+                    className="mb-2"
                 )
             
+            # Enhanced parameter input with help text
             param_inputs.extend([
-                dbc.Label(f"{param_name.replace('_', ' ').title()}:", className="fw-bold mt-2"),
+                dbc.Label([
+                    html.Strong(param_name.replace('_', ' ').title()),
+                    html.Br(),
+                    html.Small(description, className="text-muted")
+                ], className="fw-bold mt-2"),
                 param_input
             ])
+        
+        # Add helpful information
+        param_inputs.extend([
+            html.Hr(),
+            dbc.Alert([
+                html.I(className="fas fa-info-circle me-2"),
+                f"Event will be applied immediately to {current_element['name']} ({current_element['type']})"
+            ], color="info", className="mt-3")
+        ])
         
         return param_inputs
         
@@ -1018,7 +1202,8 @@ def update_event_parameters(event_type, current_element):
      Output('status-messages-area', 'children', allow_duplicate=True),
      Output('event-config-modal', 'is_open', allow_duplicate=True)],
     Input({'type': 'apply-event-btn', 'element': ALL}, 'n_clicks'),
-         [State({'type': 'event-type-select', 'element': ALL}, 'value'),
+    [State({'type': 'event-type-select', 'element': ALL}, 'value'),
+     # All possible event parameters from our enhanced configuration
      State({'type': 'param-leak_area', 'element': ALL}, 'value'),
      State({'type': 'param-leak_discharge_coefficient', 'element': ALL}, 'value'),
      State({'type': 'param-base_demand', 'element': ALL}, 'value'),
@@ -1027,19 +1212,19 @@ def update_event_parameters(event_type, current_element):
      State({'type': 'param-fire_flow_demand', 'element': ALL}, 'value'),
      State({'type': 'param-fire_start', 'element': ALL}, 'value'),
      State({'type': 'param-fire_end', 'element': ALL}, 'value'),
+     State({'type': 'param-name', 'element': ALL}, 'value'),
      State({'type': 'param-head', 'element': ALL}, 'value'),
      State({'type': 'param-diameter', 'element': ALL}, 'value'),
      State({'type': 'param-speed', 'element': ALL}, 'value'),
      State({'type': 'param-head_curve', 'element': ALL}, 'value'),
-     State({'type': 'param-name', 'element': ALL}, 'value'),
      State('current-element', 'data'),
      State('scheduled-events', 'data')],
     prevent_initial_call=True
 )
 def handle_event_application(btn_clicks, event_types, 
                            leak_area, leak_discharge_coeff, base_demand, pattern_name, category,
-                           fire_flow_demand, fire_start, fire_end, head, diameter, speed, 
-                           head_curve, name, current_element, scheduled_events):
+                           fire_flow_demand, fire_start, fire_end, name, head, diameter, speed, 
+                           head_curve, current_element, scheduled_events):
     """Handle immediate event application from the event configuration form."""
     if not any(btn_clicks) or not current_element:
         return scheduled_events or [], "", dash.no_update
