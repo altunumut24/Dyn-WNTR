@@ -1,42 +1,19 @@
 """
-Dash UI Components for Interactive Network Simulator.
+UI Components for Dash Water Network Simulator.
 
 This module contains all the reusable Dash interface components that make up
 the user interface. It's organized as a collection of functions that create
-specific UI elements like buttons, forms, displays, and controls.
-
-Key responsibilities:
-- Creating consistent UI components across the application
-- Handling user input and form validation
-- Displaying network information and simulation status
-- Managing event configuration interfaces
-- Providing monitoring and control panels
-
-UI Component categories:
-1. Status displays (network info, simulation status)
-2. Control panels (simulation controls, event configuration)
-3. Data displays (current values, event history)
-4. Input forms (event parameters, monitoring selection)
-5. Utility components (legends, help text, file upload)
-
-Design principles:
-- Each component is self-contained and reusable
-- Components return Dash components rather than modifying global state
-- Consistent styling using Bootstrap components
-- Clear labeling and help text for user guidance
+specific UI elements like cards, forms, displays, and controls.
 """
 
-import dash
-from dash import dcc, html, Input, Output, State, callback
 import dash_bootstrap_components as dbc
+from dash import html, dcc
 import datetime
 import pandas as pd
 from typing import List, Dict, Any, Optional
-import plotly.graph_objects as go
 
 # Import WNTR components
 from mwntr.network import WaterNetworkModel
-from mwntr.sim.interactive_network_simulator import MWNTRInteractiveSimulator
 
 # Import our configuration and simulation functions
 from .config import NODE_EVENTS, LINK_EVENTS, DEFAULT_MONITORED_NODES_COUNT, DEFAULT_MONITORED_LINKS_COUNT
@@ -52,50 +29,52 @@ def create_simulation_status_display(sim_initialized: bool, current_sim_time: fl
         current_sim_time (float): Current simulation time in seconds
         
     Returns:
-        dbc.Alert: Bootstrap alert component showing simulation status
+        dbc.Alert: Bootstrap alert showing simulation status
     """
     if sim_initialized:
-        current_time = datetime.timedelta(seconds=int(current_sim_time))
-        return dbc.Alert(f"🟢 Active | Time: {current_time}", color="success")
+        time_display = str(datetime.timedelta(seconds=int(current_sim_time)))
+        return dbc.Alert(
+            f"🟢 Simulation Active | Time: {time_display}",
+            color="success"
+        )
     else:
-        return dbc.Alert("🟡 Not Initialized", color="warning")
+        return dbc.Alert("🟡 Simulation Not Initialized", color="warning")
 
 
 def create_element_properties_display(wn: WaterNetworkModel, element_name: str, element_type: str) -> List:
     """
-    Create element properties display component.
+    Create element properties display.
     
     Args:
         wn (WaterNetworkModel): The water network model
-        element_name (str): Name/ID of the selected element
-        element_type (str): Type of element (Junction, Tank, Reservoir, Pipe, etc.)
+        element_name (str): Name of the selected element
+        element_type (str): Type of element
         
     Returns:
         List: List of Dash components displaying element properties
     """
     try:
-        properties = []
+        properties = [html.H6("📋 Element Properties", className="fw-bold")]
         
         if element_type in ['Junction', 'Tank', 'Reservoir']:
-            # Handle node elements
             element = wn.get_node(element_name)
             coords = element.coordinates
-            properties.append(html.P(f"Coordinates: ({coords[0]:.2f}, {coords[1]:.2f})"))
+            properties.extend([
+                html.P(f"Coordinates: ({coords[0]:.2f}, {coords[1]:.2f})"),
+                html.P(f"Elevation: {getattr(element, 'elevation', 0):.2f} m")
+            ])
             
-            # Show node-specific properties
             if hasattr(element, 'base_demand'):
                 properties.append(html.P(f"Base Demand: {element.base_demand:.4f} m³/s"))
-            if hasattr(element, 'elevation'):
-                properties.append(html.P(f"Elevation: {element.elevation:.2f} m"))
             if hasattr(element, 'pressure') and element.pressure is not None:
                 properties.append(html.P(f"Current Pressure: {element.pressure:.2f} m"))
-                
-        else:  # Handle link elements
+        else:
             element = wn.get_link(element_name)
-            properties.append(html.P(f"Start Node: {element.start_node_name}"))
-            properties.append(html.P(f"End Node: {element.end_node_name}"))
+            properties.extend([
+                html.P(f"Start Node: {element.start_node_name}"),
+                html.P(f"End Node: {element.end_node_name}")
+            ])
             
-            # Show link-specific properties
             if hasattr(element, 'length'):
                 properties.append(html.P(f"Length: {element.length:.2f} m"))
             if hasattr(element, 'diameter'):
@@ -138,22 +117,12 @@ def create_event_configuration_form(element_name: str, element_type: str, elemen
         ),
         html.Br(),
         
-        dbc.Label("Schedule Time (seconds):", className="fw-bold"),
-        dbc.Input(
-            type="number",
-            value=0,
-            min=0,
-            step=60,
-            id={"type": "event-time-input", "element": element_name}
-        ),
-        html.Br(),
-        
         # Dynamic parameter inputs will be added via callback
         html.Div(id={"type": "event-params-container", "element": element_name}),
         
         dbc.Button(
-            "⚡ Schedule Event",
-            id={"type": "schedule-event-btn", "element": element_name},
+            "⚡ Apply Event Now",
+            id={"type": "apply-event-btn", "element": element_name},
             color="primary",
             className="mt-2"
         )
@@ -302,23 +271,11 @@ def create_applied_events_history_display(applied_events: List[Dict], title_pref
                 'Time (s)': event['time'],
                 'Time': str(datetime.timedelta(seconds=int(event['time']))),
                 'Element': event['element_name'],
-                'Event Type': event['event_type'],
+                'Event': event['event_type'],
                 'Description': event['description']
             })
         
         df = pd.DataFrame(table_data)
-        
-        # Create table component
-        table = dbc.Table.from_dataframe(df, striped=True, bordered=True, hover=True, size="sm")
-        
-        components.append(
-            dbc.Collapse([
-                dbc.Card([
-                    dbc.CardHeader("📜 Complete Event History"),
-                    dbc.CardBody([table])
-                ])
-            ], id="event-history-collapse")
-        )
         
         components.append(
             dbc.Button("📜 Show Complete History", id="toggle-history-btn", size="sm", className="mt-2")
@@ -537,9 +494,8 @@ def create_professional_event_history(scheduled_events: List[Dict], applied_even
             dbc.Card([
                 dbc.CardBody([
                     html.Div([
-                        html.I(className="fas fa-calendar-alt fa-3x text-muted mb-3"),
                         html.H5("No Events Yet", className="text-muted"),
-                        html.P("Schedule events by selecting elements from the network map", className="text-muted")
+                        html.P("Apply events by selecting elements from the network map", className="text-muted")
                     ], className="text-center py-4")
                 ])
             ], className="border-0 bg-light")
@@ -554,103 +510,56 @@ def create_professional_event_history(scheduled_events: List[Dict], applied_even
                 dbc.Card([
                     dbc.CardBody([
                         html.Div([
-                            html.H3(str(len(scheduled_events)), className="text-warning mb-0"),
-                            html.P("⏳ Scheduled", className="text-muted mb-0")
-                        ], className="text-center")
-                    ])
-                ])
-            ], width=3),
-            dbc.Col([
-                dbc.Card([
-                    dbc.CardBody([
-                        html.Div([
                             html.H3(str(len(applied_events)), className="text-success mb-0"),
                             html.P("✅ Applied", className="text-muted mb-0")
                         ], className="text-center")
                     ])
                 ])
-            ], width=3),
+            ], width=4),
             dbc.Col([
                 dbc.Card([
                     dbc.CardBody([
                         html.Div([
-                            html.H3(str(len([e for e in scheduled_events if 'leak' in e.get('event_type', '')])), className="text-danger mb-0"),
+                            html.H3(str(len([e for e in applied_events if 'leak' in e.get('event_type', '')])), className="text-danger mb-0"),
                             html.P("💧 Leak Events", className="text-muted mb-0")
                         ], className="text-center")
                     ])
                 ])
-            ], width=3),
+            ], width=4),
             dbc.Col([
                 dbc.Card([
                     dbc.CardBody([
                         html.Div([
-                            html.H3(str(len([e for e in scheduled_events if 'close' in e.get('event_type', '') or 'open' in e.get('event_type', '')])), className="text-info mb-0"),
+                            html.H3(str(len([e for e in applied_events if 'close' in e.get('event_type', '') or 'open' in e.get('event_type', '')])), className="text-info mb-0"),
                             html.P("🔧 Control Events", className="text-muted mb-0")
                         ], className="text-center")
                     ])
                 ])
-            ], width=3)
+            ], width=4)
         ], className="mb-4")
     ]
     
     # Event timeline section
-    if scheduled_events or applied_events:
-        # Combine and sort events
-        all_events = []
-        
-        # Add scheduled events
-        for event in scheduled_events:
-            all_events.append({
-                **event,
-                'status': 'scheduled',
-                'time_display': datetime.timedelta(seconds=int(event.get('scheduled_time', event.get('time', 0))))
-            })
-        
-        # Add applied events
-        for event in applied_events:
-            all_events.append({
-                **event,
-                'status': 'applied',
-                'time_display': datetime.timedelta(seconds=int(event.get('scheduled_time', event.get('time', 0))))
-            })
-        
-        # Sort by time
-        all_events.sort(key=lambda x: x.get('scheduled_time', x.get('time', 0)))
-        
+    if applied_events:
         # Create timeline
         timeline_items = []
         current_time_display = datetime.timedelta(seconds=int(current_time))
         
-        for i, event in enumerate(all_events):
-            is_due = event['status'] == 'scheduled' and event.get('scheduled_time', event.get('time', 0)) <= current_time
-            
-            # Event icon and color based on type
+        for event in applied_events[-10:]:  # Show last 10 events
+            # Event icon based on type
             if 'leak' in event.get('event_type', ''):
                 icon = "💧"
-                color = "danger"
             elif 'close' in event.get('event_type', ''):
                 icon = "❌"
-                color = "warning"
             elif 'open' in event.get('event_type', ''):
                 icon = "✅"
-                color = "success"
             elif 'demand' in event.get('event_type', ''):
                 icon = "👥"
-                color = "info"
             else:
                 icon = "⚙️"
-                color = "secondary"
             
-            # Status styling
-            if event['status'] == 'applied':
-                status_badge = dbc.Badge("✅ Applied", color="success", className="me-2")
-                card_class = "border-success"
-            elif is_due:
-                status_badge = dbc.Badge("⚡ Due Now", color="warning", className="me-2")
-                card_class = "border-warning"
-            else:
-                status_badge = dbc.Badge("⏳ Scheduled", color="secondary", className="me-2")
-                card_class = "border-secondary"
+            status_badge = dbc.Badge("✅ Applied", color="success", className="me-2")
+            card_class = "border-success"
             
             # Parameter display
             params = event.get('parameters', {})
@@ -673,7 +582,7 @@ def create_professional_event_history(scheduled_events: List[Dict], applied_even
                                 dbc.Col([
                                     html.Div([
                                         status_badge,
-                                        html.Strong(f"{event['time_display']}", className="text-primary"),
+                                        html.Strong(f"{datetime.timedelta(seconds=int(event.get('time', 0)))}", className="text-primary"),
                                         html.Br(),
                                         html.Span(f"{event.get('event_type', 'Unknown').replace('_', ' ').title()}", className="h6"),
                                         html.Br(),
@@ -683,7 +592,7 @@ def create_professional_event_history(scheduled_events: List[Dict], applied_even
                             ])
                         ], className="py-2")
                     ], className=f"{card_class} mb-2 h-100")
-                ], width=12 if len(all_events) <= 2 else 6 if len(all_events) <= 4 else 4)
+                ], width=12 if len(applied_events) <= 2 else 6 if len(applied_events) <= 4 else 4)
             )
         
         components.extend([
@@ -692,4 +601,30 @@ def create_professional_event_history(scheduled_events: List[Dict], applied_even
             dbc.Row(timeline_items, className="g-3")
         ])
     
-    return components 
+    return components
+
+
+def create_event_configuration_modal() -> dbc.Modal:
+    """
+    Create event configuration modal popup.
+    
+    Returns:
+        dbc.Modal: Bootstrap modal for event configuration
+    """
+    return dbc.Modal([
+        dbc.ModalHeader([
+            dbc.ModalTitle("⚡ Configure Event", id="modal-title"),
+            dbc.Button("×", id="close-event-modal", className="btn-close", n_clicks=0)
+        ]),
+        dbc.ModalBody([
+            html.Div(id="modal-element-info"),
+            html.Hr(),
+            html.Div(id="modal-element-properties"),
+            html.Hr(),
+            html.Div(id="modal-event-configuration")
+        ]),
+        dbc.ModalFooter([
+            dbc.Button("Cancel", id="cancel-event-btn", color="secondary", className="me-2"),
+            html.Div(id="modal-event-buttons")
+        ])
+    ], id="event-config-modal", is_open=False, size="lg") 

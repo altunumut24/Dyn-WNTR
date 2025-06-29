@@ -46,6 +46,7 @@ from modules.visualization import (
     create_network_plot, create_pressure_colorbar, create_flow_colorbar,
     display_event_timeline, create_monitoring_charts
 )
+from modules.dash_ui_components import create_event_configuration_modal
 
 # Global variables to store actual WNTR objects (can't serialize these)
 global_state = {
@@ -456,7 +457,10 @@ def display_interactive_main(network_loaded, metadata):
         
         # Results section
         html.Hr(),
-        html.Div(id="simulation-results-container")
+        html.Div(id="simulation-results-container"),
+        
+        # Event configuration modal
+        create_event_configuration_modal()
     ]
 
 # Update monitoring dropdowns when network loads
@@ -563,20 +567,21 @@ def update_network_map(network_loaded, map_height, node_size,
         print(f"Error in update_network_map: {e}")
         return dbc.Alert(f"Error updating map: {str(e)}", color="danger"), ""
 
-# Element selection callback (from map clicks)
+# Element selection callback (from map clicks) - now opens modal
 @app.callback(
     [Output('current-element', 'data'),
      Output('selected-nodes', 'data'),
-     Output('selected-links', 'data')],
+     Output('selected-links', 'data'),
+     Output('event-config-modal', 'is_open')],
     Input('network-graph', 'clickData'),
     [State('network-loaded', 'data'),
      State('network-metadata', 'data')],
     prevent_initial_call=True
 )
 def handle_map_click(click_data, network_loaded, metadata):
-    """Handle clicks on the network map."""
+    """Handle clicks on the network map - opens modal for event configuration."""
     if not click_data or not network_loaded:
-        return None, [], []
+        return None, [], [], False
     
     # Extract element info from click data
     point = click_data['points'][0]
@@ -593,11 +598,72 @@ def handle_map_click(click_data, network_loaded, metadata):
         }
         
         if element_category == 'node':
-            return current_element, [element_name], []
+            return current_element, [element_name], [], True  # Open modal
         else:  # link
-            return current_element, [], [element_name]
+            return current_element, [], [element_name], True  # Open modal
     
-    return None, [], []
+    return None, [], [], False
+
+# Modal content callbacks
+@app.callback(
+    [Output('modal-title', 'children'),
+     Output('modal-element-info', 'children'),
+     Output('modal-element-properties', 'children'),
+     Output('modal-event-configuration', 'children'),
+     Output('modal-event-buttons', 'children')],
+    Input('current-element', 'data'),
+    State('network-loaded', 'data'),
+    prevent_initial_call=True
+)
+def update_modal_content(current_element, network_loaded):
+    """Update modal content when an element is selected."""
+    if not network_loaded or not current_element or global_state['wn'] is None:
+        return "⚡ Configure Event", "", "", "", ""
+    
+    try:
+        from modules.dash_ui_components import (create_element_properties_display, 
+                                              create_event_configuration_form)
+        
+        wn = global_state['wn']
+        element_name = current_element['name']
+        element_type = current_element['type']
+        element_category = current_element['category']
+        
+        # Title
+        title = f"⚡ Configure Event - {element_name} ({element_type})"
+        
+        # Element info
+        element_info = dbc.Alert([
+            html.Strong(f"Selected: {element_name}"),
+            html.Br(),
+            f"Type: {element_type} | Category: {element_category}"
+        ], color="primary")
+        
+        # Element properties
+        properties = create_element_properties_display(wn, element_name, element_type)
+        
+        # Event configuration form
+        event_form = create_event_configuration_form(element_name, element_type, element_category)
+        
+        return title, element_info, properties, event_form, ""
+        
+    except Exception as e:
+        error_content = dbc.Alert(f"Error loading element data: {str(e)}", color="danger")
+        return "⚡ Configure Event", error_content, "", "", ""
+
+# Modal close callback
+@app.callback(
+    Output('event-config-modal', 'is_open', allow_duplicate=True),
+    [Input('close-event-modal', 'n_clicks'),
+     Input('cancel-event-btn', 'n_clicks')],
+    State('event-config-modal', 'is_open'),
+    prevent_initial_call=True
+)
+def close_modal(close_clicks, cancel_clicks, is_open):
+    """Close the modal when close or cancel buttons are clicked."""
+    if close_clicks or cancel_clicks:
+        return False
+    return is_open
 
 # Simulation control callbacks - Initialize
 @app.callback(
@@ -949,10 +1015,10 @@ def update_event_parameters(event_type, current_element):
 # Event scheduling callback
 @app.callback(
     [Output('scheduled-events', 'data', allow_duplicate=True),
-     Output('status-messages-area', 'children', allow_duplicate=True)],
-    Input({'type': 'schedule-event-btn', 'element': ALL}, 'n_clicks'),
-    [State({'type': 'event-type-select', 'element': ALL}, 'value'),
-     State({'type': 'event-time-input', 'element': ALL}, 'value'),
+     Output('status-messages-area', 'children', allow_duplicate=True),
+     Output('event-config-modal', 'is_open', allow_duplicate=True)],
+    Input({'type': 'apply-event-btn', 'element': ALL}, 'n_clicks'),
+         [State({'type': 'event-type-select', 'element': ALL}, 'value'),
      State({'type': 'param-leak_area', 'element': ALL}, 'value'),
      State({'type': 'param-leak_discharge_coefficient', 'element': ALL}, 'value'),
      State({'type': 'param-base_demand', 'element': ALL}, 'value'),
@@ -970,13 +1036,13 @@ def update_event_parameters(event_type, current_element):
      State('scheduled-events', 'data')],
     prevent_initial_call=True
 )
-def handle_event_scheduling(btn_clicks, event_types, event_times, 
+def handle_event_application(btn_clicks, event_types, 
                            leak_area, leak_discharge_coeff, base_demand, pattern_name, category,
                            fire_flow_demand, fire_start, fire_end, head, diameter, speed, 
                            head_curve, name, current_element, scheduled_events):
-    """Handle event scheduling from the event configuration form."""
+    """Handle immediate event application from the event configuration form."""
     if not any(btn_clicks) or not current_element:
-        return scheduled_events or [], ""
+        return scheduled_events or [], "", dash.no_update
     
     try:
         # Find which button was clicked
@@ -1012,33 +1078,59 @@ def handle_event_scheduling(btn_clicks, event_types, event_times,
             if param_values and triggered_idx < len(param_values) and param_values[triggered_idx] is not None:
                 parameters[param_name] = param_values[triggered_idx]
         
-        # Create the event
-        from modules.simulation import create_event
+        # Create and apply the event immediately
+        from modules.simulation import create_event, apply_event_to_simulator
+        
+        # Use current simulation time (or 0 if not initialized)
+        current_sim_time = global_state.get('current_sim_time', 0)
         
         event = create_event(
             element_name=current_element['name'],
             element_type=current_element['type'],
             element_category=current_element['category'],
             event_type=event_types[triggered_idx],
-            scheduled_time=event_times[triggered_idx] or 0,
+            scheduled_time=current_sim_time,
             parameters=parameters
         )
         
         if event:
-            new_scheduled_events = (scheduled_events or []) + [event]
-            param_str = ", ".join([f"{k}={v}" for k, v in parameters.items()]) if parameters else "no parameters"
-            success_msg = dbc.Alert(
-                f"✅ Scheduled {event['event_type']} on {event['element_name']} at {event['scheduled_time']}s ({param_str})",
-                color="success",
-                dismissable=True
-            )
-            return new_scheduled_events, success_msg
+            # If simulation is running, apply immediately, otherwise add to scheduled events
+            if global_state.get('sim') and global_state.get('sim_initialized'):
+                # Apply event immediately
+                sim = global_state['sim']
+                wn = global_state['wn']
+                success, message = apply_event_to_simulator(sim, wn, event)
+                
+                if success:
+                    # Add to applied events instead of scheduled
+                    new_applied_events = global_state.get('applied_events', []) + [event]
+                    global_state['applied_events'] = new_applied_events
+                    param_str = ", ".join([f"{k}={v}" for k, v in parameters.items()]) if parameters else "no parameters"
+                    success_msg = dbc.Alert(
+                        f"⚡ Applied {event['event_type']} to {event['element_name']} immediately! ({param_str})",
+                        color="success",
+                        dismissable=True
+                    )
+                    return scheduled_events or [], success_msg, False  # Close modal
+                else:
+                    error_msg = dbc.Alert(f"❌ Failed to apply event: {message}", color="danger")
+                    return scheduled_events or [], error_msg, dash.no_update
+            else:
+                # Add to scheduled events for later application
+                new_scheduled_events = (scheduled_events or []) + [event]
+                param_str = ", ".join([f"{k}={v}" for k, v in parameters.items()]) if parameters else "no parameters"
+                success_msg = dbc.Alert(
+                    f"✅ Event scheduled: {event['event_type']} on {event['element_name']} ({param_str})",
+                    color="success",
+                    dismissable=True
+                )
+                return new_scheduled_events, success_msg, False  # Close modal
         
-        return scheduled_events or [], ""
+        return scheduled_events or [], "", dash.no_update
         
     except Exception as e:
         error_msg = dbc.Alert(f"❌ Error scheduling event: {str(e)}", color="danger")
-        return scheduled_events or [], error_msg
+        return scheduled_events or [], error_msg, dash.no_update
 
 # Update simulation status display with current time
 @app.callback(
