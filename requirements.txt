@@ -1,5 +1,7 @@
-# Essential dependencies for Streamlit Water Network Simulator
-streamlit>=1.28.0
+# Essential dependencies for Dash Water Network Simulator
+dash>=2.14.0
+dash-bootstrap-components>=1.5.0
+dash-uploader>=0.6.0
 numpy>=1.21.0,<2.0.0
 pandas>=1.5.0,<3.0.0
 plotly>=5.0.0,<6.0.0
