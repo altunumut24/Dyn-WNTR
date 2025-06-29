@@ -517,4 +517,179 @@ def create_network_info_display(file_path: str, node_count: int, link_count: int
             html.P(f"Nodes: {node_count}"),
             html.P(f"Links: {link_count}")
         ])
-    ]) 
+    ])
+
+
+def create_professional_event_history(scheduled_events: List[Dict], applied_events: List[Dict], current_time: float) -> List:
+    """
+    Create a professional, user-friendly event history display.
+    
+    Args:
+        scheduled_events (List[Dict]): List of scheduled events
+        applied_events (List[Dict]): List of applied events
+        current_time (float): Current simulation time
+        
+    Returns:
+        List: List of Dash components for professional event history
+    """
+    if not scheduled_events and not applied_events:
+        return [
+            dbc.Card([
+                dbc.CardBody([
+                    html.Div([
+                        html.I(className="fas fa-calendar-alt fa-3x text-muted mb-3"),
+                        html.H5("No Events Yet", className="text-muted"),
+                        html.P("Schedule events by selecting elements from the network map", className="text-muted")
+                    ], className="text-center py-4")
+                ])
+            ], className="border-0 bg-light")
+        ]
+    
+    components = [
+        html.H4("📅 Event History & Timeline", className="text-primary mb-4"),
+        
+        # Summary cards
+        dbc.Row([
+            dbc.Col([
+                dbc.Card([
+                    dbc.CardBody([
+                        html.Div([
+                            html.H3(str(len(scheduled_events)), className="text-warning mb-0"),
+                            html.P("⏳ Scheduled", className="text-muted mb-0")
+                        ], className="text-center")
+                    ])
+                ])
+            ], width=3),
+            dbc.Col([
+                dbc.Card([
+                    dbc.CardBody([
+                        html.Div([
+                            html.H3(str(len(applied_events)), className="text-success mb-0"),
+                            html.P("✅ Applied", className="text-muted mb-0")
+                        ], className="text-center")
+                    ])
+                ])
+            ], width=3),
+            dbc.Col([
+                dbc.Card([
+                    dbc.CardBody([
+                        html.Div([
+                            html.H3(str(len([e for e in scheduled_events if 'leak' in e.get('event_type', '')])), className="text-danger mb-0"),
+                            html.P("💧 Leak Events", className="text-muted mb-0")
+                        ], className="text-center")
+                    ])
+                ])
+            ], width=3),
+            dbc.Col([
+                dbc.Card([
+                    dbc.CardBody([
+                        html.Div([
+                            html.H3(str(len([e for e in scheduled_events if 'close' in e.get('event_type', '') or 'open' in e.get('event_type', '')])), className="text-info mb-0"),
+                            html.P("🔧 Control Events", className="text-muted mb-0")
+                        ], className="text-center")
+                    ])
+                ])
+            ], width=3)
+        ], className="mb-4")
+    ]
+    
+    # Event timeline section
+    if scheduled_events or applied_events:
+        # Combine and sort events
+        all_events = []
+        
+        # Add scheduled events
+        for event in scheduled_events:
+            all_events.append({
+                **event,
+                'status': 'scheduled',
+                'time_display': datetime.timedelta(seconds=int(event.get('scheduled_time', event.get('time', 0))))
+            })
+        
+        # Add applied events
+        for event in applied_events:
+            all_events.append({
+                **event,
+                'status': 'applied',
+                'time_display': datetime.timedelta(seconds=int(event.get('scheduled_time', event.get('time', 0))))
+            })
+        
+        # Sort by time
+        all_events.sort(key=lambda x: x.get('scheduled_time', x.get('time', 0)))
+        
+        # Create timeline
+        timeline_items = []
+        current_time_display = datetime.timedelta(seconds=int(current_time))
+        
+        for i, event in enumerate(all_events):
+            is_due = event['status'] == 'scheduled' and event.get('scheduled_time', event.get('time', 0)) <= current_time
+            
+            # Event icon and color based on type
+            if 'leak' in event.get('event_type', ''):
+                icon = "💧"
+                color = "danger"
+            elif 'close' in event.get('event_type', ''):
+                icon = "❌"
+                color = "warning"
+            elif 'open' in event.get('event_type', ''):
+                icon = "✅"
+                color = "success"
+            elif 'demand' in event.get('event_type', ''):
+                icon = "👥"
+                color = "info"
+            else:
+                icon = "⚙️"
+                color = "secondary"
+            
+            # Status styling
+            if event['status'] == 'applied':
+                status_badge = dbc.Badge("✅ Applied", color="success", className="me-2")
+                card_class = "border-success"
+            elif is_due:
+                status_badge = dbc.Badge("⚡ Due Now", color="warning", className="me-2")
+                card_class = "border-warning"
+            else:
+                status_badge = dbc.Badge("⏳ Scheduled", color="secondary", className="me-2")
+                card_class = "border-secondary"
+            
+            # Parameter display
+            params = event.get('parameters', {})
+            param_items = []
+            if params:
+                for key, value in params.items():
+                    if isinstance(value, float):
+                        param_items.append(f"{key.replace('_', ' ').title()}: {value:.3f}")
+                    else:
+                        param_items.append(f"{key.replace('_', ' ').title()}: {value}")
+            
+            timeline_items.append(
+                dbc.Col([
+                    dbc.Card([
+                        dbc.CardBody([
+                            dbc.Row([
+                                dbc.Col([
+                                    html.Div(icon, style={"fontSize": "1.5rem"})
+                                ], width=2),
+                                dbc.Col([
+                                    html.Div([
+                                        status_badge,
+                                        html.Strong(f"{event['time_display']}", className="text-primary"),
+                                        html.Br(),
+                                        html.Span(f"{event.get('event_type', 'Unknown').replace('_', ' ').title()}", className="h6"),
+                                        html.Br(),
+                                        html.Small(f"Element: {event.get('element_name', 'Unknown')}", className="text-muted"),
+                                    ] + ([html.Br(), html.Small(" | ".join(param_items), className="text-info")] if param_items else []))
+                                ], width=10)
+                            ])
+                        ], className="py-2")
+                    ], className=f"{card_class} mb-2 h-100")
+                ], width=12 if len(all_events) <= 2 else 6 if len(all_events) <= 4 else 4)
+            )
+        
+        components.extend([
+            html.Hr(),
+            html.H5(f"🕐 Event Timeline (Current: {current_time_display})", className="mb-3"),
+            dbc.Row(timeline_items, className="g-3")
+        ])
+    
+    return components 

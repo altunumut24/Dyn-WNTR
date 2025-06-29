@@ -851,33 +851,100 @@ def update_simulation_results(sim_data, current_time, sim_initialized, monitored
                 ], width=12)
             ], className="mb-3"),
             
-            # Summary statistics
-            dbc.Row([
-                dbc.Col([
-                    dbc.Card([
-                        dbc.CardBody([
-                            html.H6("📈 Statistics", className="card-title"),
-                            html.P(f"Steps Completed: {len((sim_data or {}).get('time', []))}", className="mb-1"),
-                            html.P(f"Nodes Monitored: {len(monitored_nodes or [])}", className="mb-1"),
-                            html.P(f"Links Monitored: {len(monitored_links or [])}", className="mb-0")
+                            # Summary statistics
+                dbc.Row([
+                    dbc.Col([
+                        dbc.Card([
+                            dbc.CardBody([
+                                html.H6("📈 Statistics", className="card-title"),
+                                html.P(f"Steps Completed: {len((sim_data or {}).get('time', []))}", className="mb-1"),
+                                html.P(f"Nodes Monitored: {len(monitored_nodes or [])}", className="mb-1"),
+                                html.P(f"Links Monitored: {len(monitored_links or [])}", className="mb-0")
+                            ])
                         ])
-                    ])
-                ], width=6),
-                dbc.Col([
-                    dbc.Card([
-                        dbc.CardBody([
-                            html.H6("🎯 Current Values", className="card-title"),
-                            html.Div(id="current-values-display")
+                    ], width=6),
+                    dbc.Col([
+                        dbc.Card([
+                            dbc.CardBody([
+                                html.H6("🎯 Current Values", className="card-title"),
+                                html.Div(id="current-values-display")
+                            ])
                         ])
-                    ])
-                ], width=6)
-            ])
+                    ], width=6)
+                ], className="mb-4"),
+                
+                # Event History Section
+                dbc.Row([
+                    dbc.Col([
+                        html.Div(id="event-history-container")
+                    ], width=12)
+                ])
         ]
         
         return results_content
         
     except Exception as e:
         return dbc.Alert(f"Error displaying monitoring charts: {str(e)}", color="danger")
+
+# Dynamic event parameters callback
+@app.callback(
+    Output({'type': 'event-params-container', 'element': MATCH}, 'children'),
+    Input({'type': 'event-type-select', 'element': MATCH}, 'value'),
+    State('current-element', 'data'),
+    prevent_initial_call=True
+)
+def update_event_parameters(event_type, current_element):
+    """Generate dynamic parameter inputs based on selected event type."""
+    if not event_type or not current_element:
+        return []
+    
+    try:
+        from modules.simulation import get_available_events
+        
+        # Get available events for this element
+        available_events = get_available_events(current_element['type'], current_element['category'])
+        
+        if event_type not in available_events:
+            return [dbc.Alert(f"Event type {event_type} not available", color="warning")]
+        
+        event_config = available_events[event_type]
+        params = event_config.get('params', [])
+        defaults = event_config.get('defaults', [])
+        
+        if not params:
+            return [dbc.Alert("This event requires no additional parameters", color="info")]
+        
+        # Create input fields for each parameter
+        param_inputs = []
+        for i, param_name in enumerate(params):
+            default_value = defaults[i] if i < len(defaults) else ""
+            
+            # Determine input type based on parameter name
+            if isinstance(default_value, (int, float)):
+                input_type = "number"
+                step = 0.01 if isinstance(default_value, float) else 1
+                param_input = dbc.Input(
+                    type=input_type,
+                    value=default_value,
+                    step=step,
+                    id={"type": f"param-{param_name}", "element": current_element['name']}
+                )
+            else:
+                param_input = dbc.Input(
+                    type="text",
+                    value=str(default_value) if default_value is not None else "",
+                    id={"type": f"param-{param_name}", "element": current_element['name']}
+                )
+            
+            param_inputs.extend([
+                dbc.Label(f"{param_name.replace('_', ' ').title()}:", className="fw-bold mt-2"),
+                param_input
+            ])
+        
+        return param_inputs
+        
+    except Exception as e:
+        return [dbc.Alert(f"Error loading parameters: {str(e)}", color="danger")]
 
 # Event scheduling callback
 @app.callback(
@@ -886,11 +953,27 @@ def update_simulation_results(sim_data, current_time, sim_initialized, monitored
     Input({'type': 'schedule-event-btn', 'element': ALL}, 'n_clicks'),
     [State({'type': 'event-type-select', 'element': ALL}, 'value'),
      State({'type': 'event-time-input', 'element': ALL}, 'value'),
+     State({'type': 'param-leak_area', 'element': ALL}, 'value'),
+     State({'type': 'param-leak_discharge_coefficient', 'element': ALL}, 'value'),
+     State({'type': 'param-base_demand', 'element': ALL}, 'value'),
+     State({'type': 'param-pattern_name', 'element': ALL}, 'value'),
+     State({'type': 'param-category', 'element': ALL}, 'value'),
+     State({'type': 'param-fire_flow_demand', 'element': ALL}, 'value'),
+     State({'type': 'param-fire_start', 'element': ALL}, 'value'),
+     State({'type': 'param-fire_end', 'element': ALL}, 'value'),
+     State({'type': 'param-head', 'element': ALL}, 'value'),
+     State({'type': 'param-diameter', 'element': ALL}, 'value'),
+     State({'type': 'param-speed', 'element': ALL}, 'value'),
+     State({'type': 'param-head_curve', 'element': ALL}, 'value'),
+     State({'type': 'param-name', 'element': ALL}, 'value'),
      State('current-element', 'data'),
      State('scheduled-events', 'data')],
     prevent_initial_call=True
 )
-def handle_event_scheduling(btn_clicks, event_types, event_times, current_element, scheduled_events):
+def handle_event_scheduling(btn_clicks, event_types, event_times, 
+                           leak_area, leak_discharge_coeff, base_demand, pattern_name, category,
+                           fire_flow_demand, fire_start, fire_end, head, diameter, speed, 
+                           head_curve, name, current_element, scheduled_events):
     """Handle event scheduling from the event configuration form."""
     if not any(btn_clicks) or not current_element:
         return scheduled_events or [], ""
@@ -906,6 +989,29 @@ def handle_event_scheduling(btn_clicks, event_types, event_times, current_elemen
         if triggered_idx is None or not event_types[triggered_idx]:
             return scheduled_events or [], ""
         
+        # Collect parameters for this specific element/event
+        parameters = {}
+        param_lists = {
+            'leak_area': leak_area,
+            'leak_discharge_coefficient': leak_discharge_coeff,
+            'base_demand': base_demand,
+            'pattern_name': pattern_name,
+            'category': category,
+            'fire_flow_demand': fire_flow_demand,
+            'fire_start': fire_start,
+            'fire_end': fire_end,
+            'head': head,
+            'diameter': diameter,
+            'speed': speed,
+            'head_curve': head_curve,
+            'name': name
+        }
+        
+        # Extract parameters for the triggered element (index triggered_idx)
+        for param_name, param_values in param_lists.items():
+            if param_values and triggered_idx < len(param_values) and param_values[triggered_idx] is not None:
+                parameters[param_name] = param_values[triggered_idx]
+        
         # Create the event
         from modules.simulation import create_event
         
@@ -915,13 +1021,14 @@ def handle_event_scheduling(btn_clicks, event_types, event_times, current_elemen
             element_category=current_element['category'],
             event_type=event_types[triggered_idx],
             scheduled_time=event_times[triggered_idx] or 0,
-            parameters={}  # For now, using default parameters
+            parameters=parameters
         )
         
         if event:
             new_scheduled_events = (scheduled_events or []) + [event]
+            param_str = ", ".join([f"{k}={v}" for k, v in parameters.items()]) if parameters else "no parameters"
             success_msg = dbc.Alert(
-                f"✅ Scheduled {event['event_type']} on {event['element_name']} at {event['scheduled_time']}s",
+                f"✅ Scheduled {event['event_type']} on {event['element_name']} at {event['scheduled_time']}s ({param_str})",
                 color="success",
                 dismissable=True
             )
@@ -947,6 +1054,26 @@ def update_simulation_status_display(current_time, sim_initialized):
         return create_simulation_status_display(sim_initialized or False, current_time or 0)
     except Exception as e:
         return dbc.Alert(f"Status error: {str(e)}", color="warning")
+
+# Event history display callback
+@app.callback(
+    Output('event-history-container', 'children'),
+    [Input('scheduled-events', 'data'),
+     Input('applied-events', 'data'),
+     Input('current-sim-time', 'data'),
+     Input('sim-initialized', 'data')],
+    prevent_initial_call=True
+)
+def update_event_history_display(scheduled_events, applied_events, current_time, sim_initialized):
+    """Create professional event history display."""
+    if not sim_initialized:
+        return []
+    
+    try:
+        from modules.dash_ui_components import create_professional_event_history
+        return create_professional_event_history(scheduled_events or [], applied_events or [], current_time or 0)
+    except Exception as e:
+        return [dbc.Alert(f"Error displaying event history: {str(e)}", color="danger")]
 
 # Current values display callback
 @app.callback(
