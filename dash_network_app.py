@@ -45,10 +45,86 @@ from modules.visualization import (
     create_network_plot, create_pressure_colorbar, create_flow_colorbar,
     display_event_timeline, create_monitoring_charts
 )
+
+def create_simple_monitoring_chart(elements, selected_elements, chart_type="pressure", sim_data=None):
+    """Create monitoring chart with selected elements - from plotly_restyle_test.py"""
+    import plotly.graph_objects as go
+    import numpy as np
+    
+    fig = go.Figure()
+    
+    if chart_type == "pressure":
+        chart_title = f"🔵 Pressure Monitoring ({len(selected_elements)} nodes)"
+        y_label = "Pressure (m)"
+        base_value = 30
+    else:
+        chart_title = f"🔗 Flow Monitoring ({len(selected_elements)} links)"
+        y_label = "Flow (m³/s)"
+        base_value = 0.5
+    
+    # Colors for traces
+    colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', 
+              '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
+    
+    # Add traces for selected elements
+    for i, element in enumerate(selected_elements):
+        if element in elements:
+            element_index = elements.index(element)
+            
+            # Use real simulation data if available, otherwise generate sample data
+            if sim_data and 'time_data' in sim_data:
+                time_data = list(range(len(sim_data['time_data'])))
+                if chart_type == "pressure" and 'pressure_data' in sim_data:
+                    y_data = sim_data['pressure_data'].get(element, [base_value] * len(time_data))
+                elif chart_type == "flow" and 'flow_data' in sim_data:
+                    y_data = sim_data['flow_data'].get(element, [base_value] * len(time_data))
+                else:
+                    y_data = [base_value + element_index*2 + 0.1*t for t in time_data]
+            else:
+                # Generate sample data for demonstration
+                time_data = list(range(24))
+                y_data = [base_value + element_index*2 + 0.1*t + 0.5*np.sin(t*0.5) for t in time_data]
+            
+            fig.add_trace(go.Scatter(
+                x=time_data,
+                y=y_data,
+                mode='lines+markers',
+                name=f"{element}",
+                line=dict(color=colors[element_index % len(colors)], width=2),
+                marker=dict(size=4, color=colors[element_index % len(colors)], 
+                          line=dict(width=1, color='white')),
+                hovertemplate=f"<b>{element}</b><br>" +
+                            f"Time: %{{x}}<br>" +
+                            f"{y_label}: %{{y:.2f}}<br>" +
+                            "<extra></extra>"
+            ))
+    
+    # Update layout with professional styling
+    fig.update_layout(
+        title=dict(
+            text=chart_title,
+            x=0.5,
+            font=dict(size=16, family="Arial")
+        ),
+        xaxis_title="Time (hours)",
+        yaxis_title=y_label,
+        template="plotly_white",
+        height=400,
+        showlegend=True,
+        legend=dict(
+            x=1.01,
+            y=1,
+            bgcolor="rgba(255,255,255,0.8)",
+            bordercolor="rgba(0,0,0,0.2)",
+            borderwidth=1
+        ),
+        margin=dict(t=60, l=50, r=100, b=50)
+    )
+    
+    return fig
 from modules.dash_ui_components import create_event_configuration_modal
 
 # Import the simple monitoring system
-from simple_monitoring import create_simple_monitoring_section, register_simple_callbacks
 
 # Global variables to store actual WNTR objects (can't serialize these)
 global_state = {
@@ -1062,7 +1138,7 @@ def update_simulation_progress(sim_initialized, current_time, sim_data, duration
 
 
 
-# Real-time monitoring charts display callback
+# Real-time monitoring charts display callback - SIMPLIFIED WITH MULTI-SELECT
 @app.callback(
     Output('simulation-results-container', 'children'),
     [Input('simulation-data', 'data'),
@@ -1074,26 +1150,26 @@ def update_simulation_progress(sim_initialized, current_time, sim_data, duration
     prevent_initial_call=True
 )
 def update_simulation_results(sim_data, current_time, sim_initialized, monitored_nodes, monitored_links, metadata):
-    """Update real-time monitoring charts display with simple dropdown controls."""
+    """Update real-time monitoring charts display with simple multi-select controls."""
     if not sim_initialized:
         return dbc.Alert("🚀 Initialize simulation to see real-time monitoring charts", color="info")
     
     # Use default selections if none provided
     if not monitored_nodes and global_state['wn'] is not None:
-        monitored_nodes = list(global_state['wn'].node_name_list)[:5]
+        monitored_nodes = list(global_state['wn'].node_name_list)[:3]
     if not monitored_links and global_state['wn'] is not None:
-        monitored_links = list(global_state['wn'].link_name_list)[:5]
+        monitored_links = list(global_state['wn'].link_name_list)[:3]
     
     try:
-        # Create monitoring charts (always show charts, even if no data yet)
-        fig_pressure, fig_flow = create_monitoring_charts(sim_data or initialize_simulation_data(), monitored_nodes or [], monitored_links or [])
+        # Create simple monitoring charts with multi-select functionality
+        available_nodes = metadata.get('node_names', []) if metadata else []
+        available_links = metadata.get('link_names', []) if metadata else []
+        
+        fig_pressure = create_simple_monitoring_chart(available_nodes, monitored_nodes or [], "pressure", sim_data)
+        fig_flow = create_simple_monitoring_chart(available_links, monitored_links or [], "flow", sim_data)
         
         # Current time display
         time_display = f"⏱️ Current Time: {datetime.timedelta(seconds=int(current_time or 0))}" if current_time else "⏱️ Time: 00:00:00"
-        
-        # Get available nodes and links for dropdowns
-        available_nodes = metadata.get('node_names', []) if metadata else []
-        available_links = metadata.get('link_names', []) if metadata else []
         
         results_content = [
             dbc.Row([
@@ -1105,139 +1181,36 @@ def update_simulation_results(sim_data, current_time, sim_initialized, monitored
                 ], width=4)
             ], className="mb-3"),
             
-            # Simple dropdown controls
-            dbc.Row([
-                dbc.Col([
-                    dbc.Card([
-                        dbc.CardHeader([
-                            html.H5("🎛️ Modern Interactive Monitoring Controls", className="mb-0 text-primary"),
-                            dbc.Badge("Enhanced with Patch() updates", color="success", className="ms-2")
-                        ]),
-                        dbc.CardBody([
-                            # Enhanced monitoring controls
-                            dbc.Row([
-                                dbc.Col([
-                                    html.H6("🔵 Pressure Monitoring", className="text-primary mb-2"),
-                                    dbc.InputGroup([
-                                        dcc.Dropdown(
-                                            id="node-selector",
-                                            options=[{'label': f"🔵 {node}", 'value': node} for node in available_nodes if node not in (monitored_nodes or [])],
-                                            multi=True,
-                                            placeholder="Select nodes...",
-                                            style={'minWidth': '200px'}
-                                        ),
-                                        dbc.Button("➕ Add", id="add-node-btn", color="success", size="sm"),
-                                        dbc.Button("➖ Remove", id="remove-node-btn", color="warning", size="sm"),
-                                        dbc.Button("🧹 Clear", id="clear-all-nodes-btn", color="danger", size="sm")
-                                    ], className="mb-2"),
-                                    # Add/Remove dropdowns for full functionality
-                                    html.Label("➕ Add Nodes:", className="fw-bold text-success", style={'fontSize': '14px'}),
-                                    dcc.Dropdown(
-                                        id="add-pressure-nodes",
-                                        options=[{'label': f"🔵 {node}", 'value': node} for node in available_nodes if node not in (monitored_nodes or [])],
-                                        multi=True,
-                                        placeholder="Select nodes to add...",
-                                        value=[],
-                                        style={'fontSize': '12px', 'marginBottom': '8px'}
-                                    ),
-                                    html.Label("🗑️ Remove Nodes:", className="fw-bold text-warning", style={'fontSize': '14px'}),
-                                    dcc.Dropdown(
-                                        id="remove-pressure-nodes",
-                                        options=[{'label': f"🗑️ {node}", 'value': node} for node in (monitored_nodes or [])],
-                                        multi=True,
-                                        placeholder="Select nodes to remove...",
-                                        value=[],
-                                        style={'fontSize': '12px'}
-                                    )
-                                ], width=6),
-                                dbc.Col([
-                                    html.H6("🔗 Flow Monitoring", className="text-info mb-2"),
-                                    dbc.InputGroup([
-                                        dcc.Dropdown(
-                                            id="link-selector",
-                                            options=[{'label': f"🔗 {link}", 'value': link} for link in available_links if link not in (monitored_links or [])],
-                                            multi=True,
-                                            placeholder="Select links...",
-                                            style={'minWidth': '200px'}
-                                        ),
-                                        dbc.Button("➕ Add", id="add-link-btn", color="success", size="sm"),
-                                        dbc.Button("➖ Remove", id="remove-link-btn", color="warning", size="sm"),
-                                        dbc.Button("🧹 Clear", id="clear-all-links-btn", color="danger", size="sm")
-                                    ], className="mb-2"),
-                                    # Add/Remove dropdowns for full functionality
-                                    html.Label("➕ Add Links:", className="fw-bold text-success", style={'fontSize': '14px'}),
-                                    dcc.Dropdown(
-                                        id="add-flow-links",
-                                        options=[{'label': f"🔗 {link}", 'value': link} for link in available_links if link not in (monitored_links or [])],
-                                        multi=True,
-                                        placeholder="Select links to add...",
-                                        value=[],
-                                        style={'fontSize': '12px', 'marginBottom': '8px'}
-                                    ),
-                                    html.Label("🗑️ Remove Links:", className="fw-bold text-warning", style={'fontSize': '14px'}),
-                                    dcc.Dropdown(
-                                        id="remove-flow-links",
-                                        options=[{'label': f"🗑️ {link}", 'value': link} for link in (monitored_links or [])],
-                                        multi=True,
-                                        placeholder="Select links to remove...",
-                                        value=[],
-                                        style={'fontSize': '12px'}
-                                    )
-                                ], width=6)
-                            ]),
-                            
-                            # Interaction mode toggle
-                            dbc.Row([
-                                dbc.Col([
-                                    html.Label("🗺️ Map Interaction Mode:", className="fw-bold me-2"),
-                                    dbc.RadioItems(
-                                        id="map-interaction-mode",
-                                        options=[
-                                            {'label': '➕ Add elements', 'value': 'add'},
-                                            {'label': '➖ Remove elements', 'value': 'remove'}
-                                        ],
-                                        value='add',
-                                        inline=True,
-                                        className="me-3"
-                                    ),
-                                ], width=12)
-                            ], className="mb-3"),
-                            
-                            # Current monitoring status
-                            dbc.Row([
-                                dbc.Col([
-                                    html.Div([
-                                        html.Strong("🔵 Monitoring: "),
-                                        html.Span([
-                                            dbc.Badge(f"🔵 {node}", color="success", className="me-1", 
-                                                     style={'cursor': 'pointer', 'userSelect': 'none'}) 
-                                            for node in (monitored_nodes or [])
-                                        ] if monitored_nodes else [dbc.Badge("None", color="secondary")])
-                                    ], style={'minHeight': '30px'})
-                                ], width=6),
-                                dbc.Col([
-                                    html.Div([
-                                        html.Strong("🔗 Monitoring: "),
-                                        html.Span([
-                                            dbc.Badge(f"🔗 {link}", color="info", className="me-1",
-                                                     style={'cursor': 'pointer', 'userSelect': 'none'}) 
-                                            for link in (monitored_links or [])
-                                        ] if monitored_links else [dbc.Badge("None", color="secondary")])
-                                    ], style={'minHeight': '30px'})
-                                ], width=6)
-                            ], className="mt-2"),
-                            
-                            # Usage instructions
-                            dbc.Alert([
-                                html.Strong("💡 Interaction Tips:"), html.Br(),
-                                "🖱️ Click legend items to show/hide traces instantly", html.Br(),
-                                "🗺️ Click map elements to add/remove monitoring", html.Br(),
-                                "⚡ Dropdowns add immediately - no waiting for simulation steps!"
-                            ], color="info", className="mt-3", style={'fontSize': '14px'})
-                        ])
+            # SIMPLIFIED Multi-Select Controls (From plotly_restyle_test.py)
+            dbc.Card([
+                dbc.CardHeader("🎛️ Multi-Select Monitoring Controls"),
+                dbc.CardBody([
+                    dbc.Row([
+                        dbc.Col([
+                            html.H5("🔵 Select Nodes for Pressure Monitoring"),
+                            dcc.Dropdown(
+                                id="interactive-pressure-multiselect",
+                                options=[{"label": node, "value": node} for node in available_nodes],
+                                value=monitored_nodes or [],
+                                multi=True,
+                                placeholder="Select nodes to monitor...",
+                                style={"marginBottom": "10px"}
+                            )
+                        ], width=6),
+                        dbc.Col([
+                            html.H5("🔗 Select Links for Flow Monitoring"),
+                            dcc.Dropdown(
+                                id="interactive-flow-multiselect",
+                                options=[{"label": link, "value": link} for link in available_links],
+                                value=monitored_links or [],
+                                multi=True,
+                                placeholder="Select links to monitor...",
+                                style={"marginBottom": "10px"}
+                            )
+                        ], width=6)
                     ])
-                ], width=12)
-            ], className="mb-3"),
+                ])
+            ], className="mb-4"),
             
             # Monitoring charts
             dbc.Row([
@@ -1309,6 +1282,19 @@ def update_simulation_results(sim_data, current_time, sim_initialized, monitored
         return dbc.Alert(f"Error displaying monitoring charts: {str(e)}", color="danger")
 
 # Enhanced dynamic event parameters callback
+# NEW CALLBACK: Handle multi-select dropdowns for interactive mode
+@app.callback(
+    [Output('pressure-monitoring-nodes', 'data', allow_duplicate=True),
+     Output('flow-monitoring-links', 'data', allow_duplicate=True)],
+    [Input('interactive-pressure-multiselect', 'value'),
+     Input('interactive-flow-multiselect', 'value')],
+    prevent_initial_call=True
+)
+def update_monitoring_from_multiselect(selected_nodes, selected_links):
+    """Update monitoring stores based on multi-select dropdowns."""
+    return selected_nodes or [], selected_links or []
+
+
 @app.callback(
     Output({'type': 'event-params-container', 'element': MATCH}, 'children'),
     Input({'type': 'event-type-select', 'element': MATCH}, 'value'),
@@ -2283,127 +2269,61 @@ def update_batch_network_map(network_loaded, map_height, node_size, current_time
     prevent_initial_call=True
 )
 def update_batch_simulation_results(sim_data, current_time, monitored_nodes, monitored_links, metadata):
-    """Update batch simulation monitoring charts with inline dropdown controls."""
-    if not sim_data or not monitored_nodes and not monitored_links:
-        return dbc.Alert("🚀 Start animation to see real-time monitoring charts", color="info")
+    """Update batch simulation monitoring charts with simple multi-select controls."""
+    if not monitored_nodes and not monitored_links:
+        return dbc.Alert("🚀 Select elements to monitor using the multi-select dropdowns below", color="info")
     
     try:
-        # Create monitoring charts
-        fig_pressure, fig_flow = create_monitoring_charts(sim_data, monitored_nodes or [], monitored_links or [])
+        # Create simple monitoring charts with multi-select functionality
+        available_nodes = metadata.get('node_names', []) if metadata else []
+        available_links = metadata.get('link_names', []) if metadata else []
+        
+        fig_pressure = create_simple_monitoring_chart(available_nodes, monitored_nodes or [], "pressure", sim_data)
+        fig_flow = create_simple_monitoring_chart(available_links, monitored_links or [], "flow", sim_data)
         
         # Current time display
         time_display = f"⏱️ Current Time: {datetime.timedelta(seconds=int(current_time or 0))}"
         
-        # Get available nodes and links for dropdowns
-        available_nodes = metadata.get('node_names', []) if metadata else []
-        available_links = metadata.get('link_names', []) if metadata else []
-        
         return [
             dbc.Row([
                 dbc.Col([
-                    html.H4("📊 Interactive Batch Monitoring", className="text-primary"),
+                    html.H4("📊 Batch Simulation Monitoring", className="text-primary"),
                 ], width=8),
                 dbc.Col([
                     html.H6(time_display, className="text-muted text-end")
                 ], width=4)
             ], className="mb-3"),
             
-            # Batch enhanced monitoring controls
-            dbc.Row([
-                dbc.Col([
-                    dbc.Card([
-                        dbc.CardHeader([
-                            html.H5("🎛️ Batch Monitoring Controls", className="mb-0 text-primary"),
-                            dbc.Badge("Synchronized with real-time simulation", color="info", className="ms-2")
-                        ]),
-                        dbc.CardBody([
-                            # Batch monitoring controls
-                            dbc.Row([
-                                dbc.Col([
-                                    html.H6("🔵 Pressure Monitoring", className="text-primary mb-2"),
-                                    dbc.InputGroup([
-                                        dcc.Dropdown(
-                                            id="batch-node-selector",
-                                            options=[{'label': f"🔵 {node}", 'value': node} for node in available_nodes if node not in (monitored_nodes or [])],
-                                            multi=True,
-                                            placeholder="Select nodes...",
-                                            style={'minWidth': '200px'}
-                                        ),
-                                        dbc.Button("➕ Add", id="batch-add-node-btn", color="success", size="sm"),
-                                        dbc.Button("➖ Remove", id="batch-remove-node-btn", color="warning", size="sm"),
-                                        dbc.Button("🧹 Clear", id="batch-clear-nodes-btn", color="danger", size="sm")
-                                    ], className="mb-2"),
-                                    # Legacy dropdown for backward compatibility
-                                    dcc.Dropdown(
-                                        id="batch-add-pressure-nodes",
-                                        options=[{'label': f"🔵 {node}", 'value': node} for node in available_nodes if node not in (monitored_nodes or [])],
-                                        multi=True,
-                                        placeholder="Legacy: Select nodes to add...",
-                                        value=[],
-                                        style={'fontSize': '12px', 'opacity': 0.7}
-                                    )
-                                ], width=6),
-                                dbc.Col([
-                                    html.H6("🔗 Flow Monitoring", className="text-info mb-2"),
-                                    dbc.InputGroup([
-                                        dcc.Dropdown(
-                                            id="batch-link-selector",
-                                            options=[{'label': f"🔗 {link}", 'value': link} for link in available_links if link not in (monitored_links or [])],
-                                            multi=True,
-                                            placeholder="Select links...",
-                                            style={'minWidth': '200px'}
-                                        ),
-                                        dbc.Button("➕ Add", id="batch-add-link-btn", color="success", size="sm"),
-                                        dbc.Button("➖ Remove", id="batch-remove-link-btn", color="warning", size="sm"),
-                                        dbc.Button("🧹 Clear", id="batch-clear-links-btn", color="danger", size="sm")
-                                    ], className="mb-2"),
-                                    # Legacy dropdown for backward compatibility
-                                    dcc.Dropdown(
-                                        id="batch-add-flow-links",
-                                        options=[{'label': f"🔗 {link}", 'value': link} for link in available_links if link not in (monitored_links or [])],
-                                        multi=True,
-                                        placeholder="Legacy: Select links to add...",
-                                        value=[],
-                                        style={'fontSize': '12px', 'opacity': 0.7}
-                                    )
-                                ], width=6)
-                            ]),
-                            
-                            # Current monitoring status
-                            dbc.Row([
-                                dbc.Col([
-                                    html.Div([
-                                        html.Strong("🔵 Monitoring: "),
-                                        html.Span([
-                                            dbc.Badge(f"🔵 {node}", color="success", className="me-1", 
-                                                     style={'cursor': 'pointer', 'userSelect': 'none'}) 
-                                            for node in (monitored_nodes or [])
-                                        ] if monitored_nodes else [dbc.Badge("None", color="secondary")])
-                                    ], style={'minHeight': '30px'})
-                                ], width=6),
-                                dbc.Col([
-                                    html.Div([
-                                        html.Strong("🔗 Monitoring: "),
-                                        html.Span([
-                                            dbc.Badge(f"🔗 {link}", color="info", className="me-1",
-                                                     style={'cursor': 'pointer', 'userSelect': 'none'}) 
-                                            for link in (monitored_links or [])
-                                        ] if monitored_links else [dbc.Badge("None", color="secondary")])
-                                    ], style={'minHeight': '30px'})
-                                ], width=6)
-                            ], className="mt-2"),
-                            
-                            # Batch-specific instructions
-                            dbc.Alert([
-                                html.Strong("🎬 Batch Mode Tips:"), html.Br(),
-                                "🖱️ Click legend items to show/hide traces instantly", html.Br(),
-                                "🗺️ Click map elements to add/remove monitoring", html.Br(),
-                                "⚡ Charts update automatically during batch animation!"
-                            ], color="primary", className="mt-3", style={'fontSize': '14px'})
-                        ])
+            # SIMPLIFIED Multi-Select Controls for Batch Mode
+            dbc.Card([
+                dbc.CardHeader("🎛️ Batch Multi-Select Monitoring Controls"),
+                dbc.CardBody([
+                    dbc.Row([
+                        dbc.Col([
+                            html.H5("🔵 Select Nodes for Pressure Monitoring"),
+                            dcc.Dropdown(
+                                id="batch-pressure-multiselect",
+                                options=[{"label": node, "value": node} for node in available_nodes],
+                                value=monitored_nodes or [],
+                                multi=True,
+                                placeholder="Select nodes to monitor...",
+                                style={"marginBottom": "10px"}
+                            )
+                        ], width=6),
+                        dbc.Col([
+                            html.H5("🔗 Select Links for Flow Monitoring"),
+                            dcc.Dropdown(
+                                id="batch-flow-multiselect",
+                                options=[{"label": link, "value": link} for link in available_links],
+                                value=monitored_links or [],
+                                multi=True,
+                                placeholder="Select links to monitor...",
+                                style={"marginBottom": "10px"}
+                            )
+                        ], width=6)
                     ])
-                ], width=12)
-            ], className="mb-3"),
+                ])
+            ], className="mb-4"),
             
             # Monitoring charts
             dbc.Row([
@@ -2440,6 +2360,20 @@ def update_batch_simulation_results(sim_data, current_time, monitored_nodes, mon
         
     except Exception as e:
         return dbc.Alert(f"Error displaying charts: {str(e)}", color="danger")
+
+
+# NEW CALLBACK: Handle multi-select dropdowns for batch mode
+@app.callback(
+    [Output('pressure-monitoring-nodes', 'data', allow_duplicate=True),
+     Output('flow-monitoring-links', 'data', allow_duplicate=True)],
+    [Input('batch-pressure-multiselect', 'value'),
+     Input('batch-flow-multiselect', 'value')],
+    prevent_initial_call=True
+)
+def update_batch_monitoring_from_multiselect(selected_nodes, selected_links):
+    """Update monitoring stores based on batch multi-select dropdowns."""
+    return selected_nodes or [], selected_links or []
+
 
 # Batch network status display callback
 @app.callback(
@@ -2578,11 +2512,7 @@ def handle_batch_jump(n_clicks, jump_hours, batch_events, network_loaded):
         print(f"Error jumping to time: {e}")
         return no_update, no_update, no_update
 
-# ========================================
-# 🔥 REGISTER SIMPLE MONITORING SYSTEM
-# ========================================
-# Register the simple monitoring callbacks
-register_simple_callbacks(app)
+
 
 if __name__ == '__main__':
     print("🚀 Starting Water Network Simulator with Simple Monitoring")
@@ -2593,11 +2523,7 @@ if __name__ == '__main__':
 
 
 
-# ========================================
-# 🔥 REGISTER SIMPLE MONITORING SYSTEM
-# ========================================
-# Register the simple monitoring callbacks
-register_simple_callbacks(app)
+
 
 if __name__ == "__main__":
     print("🚀 Starting Water Network Simulator with Simple Monitoring")
