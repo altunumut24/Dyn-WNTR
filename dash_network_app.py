@@ -141,7 +141,11 @@ def create_layout():
         html.Footer([
             html.P("Interactive Network Simulator | Built with Dash & Plotly", 
                   className="text-center text-muted small")
-        ])
+        ]),
+        
+        # Interactive chart modals
+        create_node_selection_modal(),
+        create_link_selection_modal()
         
     ], fluid=True, className="px-4 py-3")
 
@@ -183,6 +187,49 @@ def create_network_file_selector():
                       color="primary", className="mt-3")
         ])
     ])
+
+# Add modals for selecting nodes and links
+def create_node_selection_modal():
+    """Create modal for selecting nodes to add to monitoring."""
+    return dbc.Modal([
+        dbc.ModalHeader("Select Nodes to Monitor"),
+        dbc.ModalBody([
+            html.P("Select nodes to add to pressure monitoring:"),
+            dcc.Dropdown(
+                id="node-selection-dropdown",
+                multi=True,
+                placeholder="Select nodes...",
+                style={"marginBottom": "10px"}
+            ),
+            dbc.Alert("Selected nodes will be added to the pressure monitoring chart.", 
+                     color="info", className="mt-2")
+        ]),
+        dbc.ModalFooter([
+            dbc.Button("Add Selected", id="confirm-add-nodes", color="success", className="me-2"),
+            dbc.Button("Cancel", id="cancel-add-nodes", color="secondary")
+        ])
+    ], id="node-selection-modal", size="lg")
+
+def create_link_selection_modal():
+    """Create modal for selecting links to add to monitoring."""
+    return dbc.Modal([
+        dbc.ModalHeader("Select Links to Monitor"),
+        dbc.ModalBody([
+            html.P("Select links to add to flow monitoring:"),
+            dcc.Dropdown(
+                id="link-selection-dropdown",
+                multi=True,
+                placeholder="Select links...",
+                style={"marginBottom": "10px"}
+            ),
+            dbc.Alert("Selected links will be added to the flow monitoring chart.", 
+                     color="info", className="mt-2")
+        ]),
+        dbc.ModalFooter([
+            dbc.Button("Add Selected", id="confirm-add-links", color="success", className="me-2"),
+            dbc.Button("Cancel", id="cancel-add-links", color="secondary")
+        ])
+    ], id="link-selection-modal", size="lg")
 
 # Set the app layout
 app.layout = create_layout()
@@ -568,14 +615,17 @@ def update_network_map(network_loaded, map_height, node_size,
         show_sim_data = sim_initialized or False
         
         # Create network plot using existing visualization module
+        map_height_int = int(map_height) if map_height else 800
+        node_size_float = float(node_size) if node_size else 1.0
+        
         fig = create_network_plot(
             wn,
             selected_nodes or [],
             selected_links or [],
             show_simulation_data=show_sim_data,
             sim_initialized=sim_initialized or False,
-            height=map_height or 800,
-            node_size_scale=node_size or 1.0
+            height=map_height_int,
+            node_size_scale=node_size_float
         )
         
         map_component = dcc.Graph(id="network-graph", figure=fig)
@@ -1966,14 +2016,17 @@ def update_batch_network_map(network_loaded, map_height, node_size, current_time
         wn = global_state['wn']
         
         # Create network plot using existing visualization module
+        map_height_int = int(map_height) if map_height else 700
+        node_size_float = float(node_size) if node_size else 1.0
+        
         fig = create_network_plot(
             wn,
             [],  # No manual selections in batch mode
             [],
             show_simulation_data=True,
             sim_initialized=True,
-            height=map_height or 700,
-            node_size_scale=node_size or 1.0
+            height=map_height_int,
+            node_size_scale=node_size_float
         )
         
         map_component = dcc.Graph(id="batch-network-graph", figure=fig)
@@ -2029,15 +2082,51 @@ def update_batch_simulation_results(sim_data, current_time, monitored_nodes, mon
             
             dbc.Row([
                 dbc.Col([
-                    dcc.Graph(figure=fig_pressure, style={"height": "350px"}) if fig_pressure else 
-                    dbc.Alert("📍 No pressure data available", color="info")
+                    html.Div([
+                        dbc.Alert([
+                            "💡 Click on the chart legend to add/remove nodes from monitoring!",
+                            html.Br(),
+                            "Available nodes: Click 'Add Node' below to see options"
+                        ], color="info", className="mb-2"),
+                        dcc.Graph(
+                            id="interactive-pressure-chart",
+                            figure=fig_pressure, 
+                            style={"height": "350px"}
+                        ) if fig_pressure else dbc.Alert("📍 No pressure data available", color="info"),
+                        dbc.Row([
+                            dbc.Col([
+                                dbc.Button("➕ Add Node", id="add-node-btn", color="success", size="sm")
+                            ], width=6),
+                            dbc.Col([
+                                dbc.Button("➖ Remove All", id="remove-all-nodes-btn", color="danger", size="sm")
+                            ], width=6)
+                        ], className="mt-2")
+                    ])
                 ], width=12)
             ], className="mb-3"),
             
             dbc.Row([
                 dbc.Col([
-                    dcc.Graph(figure=fig_flow, style={"height": "350px"}) if fig_flow else 
-                    dbc.Alert("🔗 No flow data available", color="info")
+                    html.Div([
+                        dbc.Alert([
+                            "💡 Click on the chart legend to add/remove links from monitoring!",
+                            html.Br(),
+                            "Available links: Click 'Add Link' below to see options"
+                        ], color="info", className="mb-2"),
+                        dcc.Graph(
+                            id="interactive-flow-chart",
+                            figure=fig_flow,
+                            style={"height": "350px"}
+                        ) if fig_flow else dbc.Alert("🔗 No flow data available", color="info"),
+                        dbc.Row([
+                            dbc.Col([
+                                dbc.Button("➕ Add Link", id="add-link-btn", color="success", size="sm")
+                            ], width=6),
+                            dbc.Col([
+                                dbc.Button("➖ Remove All", id="remove-all-links-btn", color="danger", size="sm")
+                            ], width=6)
+                        ], className="mt-2")
+                    ])
                 ], width=12)
             ])
         ]
@@ -2183,4 +2272,182 @@ def handle_batch_jump(n_clicks, jump_hours, batch_events, network_loaded):
         return no_update, no_update, no_update
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=8050)
+    app.run_server(debug=True)
+
+# Interactive Chart Functionality - Add/Remove Monitoring Elements
+
+# Callback to open node selection modal
+@app.callback(
+    [Output('node-selection-modal', 'is_open'),
+     Output('node-selection-dropdown', 'options'),
+     Output('node-selection-dropdown', 'value')],
+    [Input('add-node-btn', 'n_clicks'),
+     Input('cancel-add-nodes', 'n_clicks'),
+     Input('confirm-add-nodes', 'n_clicks')],
+    [State('node-selection-modal', 'is_open'),
+     State('network-metadata', 'data'),
+     State('pressure-monitoring-nodes', 'data'),
+     State('node-selection-dropdown', 'value')],
+    prevent_initial_call=True
+)
+def handle_node_selection_modal(add_clicks, cancel_clicks, confirm_clicks, 
+                               is_open, metadata, current_nodes, selected_nodes):
+    """Handle opening/closing node selection modal."""
+    ctx_trigger = ctx.triggered[0] if ctx.triggered else None
+    
+    if not ctx_trigger:
+        return False, [], []
+    
+    if ctx_trigger['prop_id'] == 'add-node-btn.n_clicks' and add_clicks:
+        # Open modal and populate options
+        if metadata and 'node_names' in metadata:
+            available_nodes = metadata['node_names']
+            # Remove already monitored nodes from options
+            current_nodes = current_nodes or []
+            available_options = [
+                {'label': f"🔵 {node}", 'value': node} 
+                for node in available_nodes 
+                if node not in current_nodes
+            ]
+            return True, available_options, []
+        else:
+            return False, [], []
+    
+    elif ctx_trigger['prop_id'] in ['cancel-add-nodes.n_clicks', 'confirm-add-nodes.n_clicks']:
+        # Close modal
+        return False, [], []
+    
+    return is_open, [], []
+
+# Callback to open link selection modal  
+@app.callback(
+    [Output('link-selection-modal', 'is_open'),
+     Output('link-selection-dropdown', 'options'),
+     Output('link-selection-dropdown', 'value')],
+    [Input('add-link-btn', 'n_clicks'),
+     Input('cancel-add-links', 'n_clicks'),
+     Input('confirm-add-links', 'n_clicks')],
+    [State('link-selection-modal', 'is_open'),
+     State('network-metadata', 'data'),
+     State('flow-monitoring-links', 'data'),
+     State('link-selection-dropdown', 'value')],
+    prevent_initial_call=True
+)
+def handle_link_selection_modal(add_clicks, cancel_clicks, confirm_clicks,
+                               is_open, metadata, current_links, selected_links):
+    """Handle opening/closing link selection modal."""
+    ctx_trigger = ctx.triggered[0] if ctx.triggered else None
+    
+    if not ctx_trigger:
+        return False, [], []
+    
+    if ctx_trigger['prop_id'] == 'add-link-btn.n_clicks' and add_clicks:
+        # Open modal and populate options
+        if metadata and 'link_names' in metadata:
+            available_links = metadata['link_names']
+            # Remove already monitored links from options
+            current_links = current_links or []
+            available_options = [
+                {'label': f"🔗 {link}", 'value': link}
+                for link in available_links
+                if link not in current_links
+            ]
+            return True, available_options, []
+        else:
+            return False, [], []
+    
+    elif ctx_trigger['prop_id'] in ['cancel-add-links.n_clicks', 'confirm-add-links.n_clicks']:
+        # Close modal
+        return False, [], []
+    
+    return is_open, [], []
+
+# Callback to add selected nodes to monitoring
+@app.callback(
+    [Output('pressure-monitoring-nodes', 'data', allow_duplicate=True),
+     Output('status-messages-area', 'children', allow_duplicate=True)],
+    Input('confirm-add-nodes', 'n_clicks'),
+    [State('node-selection-dropdown', 'value'),
+     State('pressure-monitoring-nodes', 'data')],
+    prevent_initial_call=True
+)
+def add_nodes_to_monitoring(n_clicks, selected_nodes, current_nodes):
+    """Add selected nodes to pressure monitoring."""
+    if not n_clicks or not selected_nodes:
+        return no_update, no_update
+    
+    current_nodes = current_nodes or []
+    new_nodes = list(set(current_nodes + selected_nodes))
+    
+    success_msg = dbc.Alert(
+        f"✅ Added {len(selected_nodes)} node(s) to pressure monitoring: {', '.join(selected_nodes)}",
+        color="success", dismissable=True, duration=4000
+    )
+    
+    return new_nodes, success_msg
+
+# Callback to add selected links to monitoring
+@app.callback(
+    [Output('flow-monitoring-links', 'data', allow_duplicate=True),
+     Output('status-messages-area', 'children', allow_duplicate=True)],
+    Input('confirm-add-links', 'n_clicks'),
+    [State('link-selection-dropdown', 'value'),
+     State('flow-monitoring-links', 'data')],
+    prevent_initial_call=True
+)
+def add_links_to_monitoring(n_clicks, selected_links, current_links):
+    """Add selected links to flow monitoring."""
+    if not n_clicks or not selected_links:
+        return no_update, no_update
+    
+    current_links = current_links or []
+    new_links = list(set(current_links + selected_links))
+    
+    success_msg = dbc.Alert(
+        f"✅ Added {len(selected_links)} link(s) to flow monitoring: {', '.join(selected_links)}",
+        color="success", dismissable=True, duration=4000
+    )
+    
+    return new_links, success_msg
+
+# Callback to remove all nodes from monitoring
+@app.callback(
+    [Output('pressure-monitoring-nodes', 'data', allow_duplicate=True),
+     Output('status-messages-area', 'children', allow_duplicate=True)],
+    Input('remove-all-nodes-btn', 'n_clicks'),
+    State('pressure-monitoring-nodes', 'data'),
+    prevent_initial_call=True
+)
+def remove_all_nodes(n_clicks, current_nodes):
+    """Remove all nodes from pressure monitoring."""
+    if not n_clicks:
+        return no_update, no_update
+    
+    removed_count = len(current_nodes or [])
+    warning_msg = dbc.Alert(
+        f"🗑️ Removed all {removed_count} node(s) from pressure monitoring",
+        color="warning", dismissable=True, duration=4000
+    )
+    
+    return [], warning_msg
+
+# Callback to remove all links from monitoring
+@app.callback(
+    [Output('flow-monitoring-links', 'data', allow_duplicate=True),
+     Output('status-messages-area', 'children', allow_duplicate=True)],
+    Input('remove-all-links-btn', 'n_clicks'),
+    State('flow-monitoring-links', 'data'),
+    prevent_initial_call=True
+)
+def remove_all_links(n_clicks, current_links):
+    """Remove all links from flow monitoring."""
+    if not n_clicks:
+        return no_update, no_update
+    
+    removed_count = len(current_links or [])
+    warning_msg = dbc.Alert(
+        f"🗑️ Removed all {removed_count} link(s) from flow monitoring",
+        color="warning", dismissable=True, duration=4000
+    )
+    
+    return [], warning_msg

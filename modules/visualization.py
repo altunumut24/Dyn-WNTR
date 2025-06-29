@@ -659,9 +659,23 @@ def display_event_timeline(events: List[Dict[str, Any]], current_time: float):
 
 
 def create_monitoring_charts(simulation_data: Dict, monitored_nodes: List[str], monitored_links: List[str]) -> Tuple[go.Figure, go.Figure]:
-    """Create monitoring charts for pressure and flow data."""
+    """Create professional monitoring charts for pressure and flow data with enhanced styling."""
     fig_pressure = None
     fig_flow = None
+    
+    # Professional color palette for traces
+    professional_colors = [
+        '#1f77b4',  # Blue
+        '#ff7f0e',  # Orange
+        '#2ca02c',  # Green
+        '#d62728',  # Red
+        '#9467bd',  # Purple
+        '#8c564b',  # Brown
+        '#e377c2',  # Pink
+        '#7f7f7f',  # Gray
+        '#bcbd22',  # Olive
+        '#17becf'   # Cyan
+    ]
     
     # Pressure chart
     if monitored_nodes:
@@ -693,13 +707,18 @@ def create_monitoring_charts(simulation_data: Dict, monitored_nodes: List[str], 
                             x_data = time_data
                             y_data = node_pressure_data[:len(time_data)]
                         
+                        color = professional_colors[traces_added % len(professional_colors)]
                         fig_pressure.add_trace(go.Scatter(
                             x=x_data,
                             y=y_data,
                             mode='lines+markers',
-                            name=node_name,
-                            line=dict(width=3),
-                            marker=dict(size=6)
+                            name=f"🔵 {node_name}",
+                            line=dict(width=3, color=color),
+                            marker=dict(size=7, color=color, line=dict(width=2, color='white')),
+                            hovertemplate='<b>%{fullData.name}</b><br>' +
+                                        'Time: %{x:.0f}s<br>' +
+                                        'Pressure: %{y:.2f}m<br>' +
+                                        '<extra></extra>'
                         ))
                         traces_added += 1
                 else:
@@ -753,11 +772,42 @@ def create_monitoring_charts(simulation_data: Dict, monitored_nodes: List[str], 
             )
         
         fig_pressure.update_layout(
-            title=f"🔵 Node Pressure Over Time ({len(monitored_nodes)} nodes selected)",
-            xaxis_title="Time (s)",
-            yaxis_title="Pressure (m)",
+            title=dict(
+                text=f"🔵 Node Pressure Over Time ({len(monitored_nodes)} nodes selected)",
+                font=dict(size=18, color='#2c3e50'),
+                x=0.5
+            ),
+            xaxis=dict(
+                title="Time (seconds)",
+                titlefont=dict(size=14, color='#34495e'),
+                gridcolor='#ecf0f1',
+                gridwidth=1,
+                showgrid=True,
+                zeroline=True,
+                zerolinecolor='#bdc3c7',
+                zerolinewidth=2
+            ),
+            yaxis=dict(
+                title="Pressure (meters)",
+                titlefont=dict(size=14, color='#34495e'),
+                gridcolor='#ecf0f1',
+                gridwidth=1,
+                showgrid=True,
+                zeroline=True,
+                zerolinecolor='#bdc3c7',
+                zerolinewidth=2
+            ),
             height=400,
-            hovermode='x unified'
+            hovermode='x unified',
+            plot_bgcolor='white',
+            paper_bgcolor='white',
+            legend=dict(
+                bgcolor='rgba(255, 255, 255, 0.8)',
+                bordercolor='#bdc3c7',
+                borderwidth=1,
+                font=dict(size=12)
+            ),
+            margin=dict(l=50, r=50, t=60, b=50)
         )
     
     # Flow chart
@@ -790,13 +840,18 @@ def create_monitoring_charts(simulation_data: Dict, monitored_nodes: List[str], 
                             x_data = time_data
                             y_data = link_flow_data[:len(time_data)]
                         
+                        color = professional_colors[traces_added % len(professional_colors)]
                         fig_flow.add_trace(go.Scatter(
                             x=x_data,
                             y=y_data,
                             mode='lines+markers',
-                            name=link_name,
-                            line=dict(width=3),
-                            marker=dict(size=6)
+                            name=f"🔗 {link_name}",
+                            line=dict(width=3, color=color),
+                            marker=dict(size=7, color=color, line=dict(width=2, color='white')),
+                            hovertemplate='<b>%{fullData.name}</b><br>' +
+                                        'Time: %{x:.0f}s<br>' +
+                                        'Flow: %{y:.4f}m³/s<br>' +
+                                        '<extra></extra>'
                         ))
                         traces_added += 1
                 else:
@@ -850,11 +905,42 @@ def create_monitoring_charts(simulation_data: Dict, monitored_nodes: List[str], 
             )
         
         fig_flow.update_layout(
-            title=f"🔗 Link Flow Over Time ({len(monitored_links)} links selected)",
-            xaxis_title="Time (s)",
-            yaxis_title="Flow Rate (m³/s)",
+            title=dict(
+                text=f"🔗 Link Flow Over Time ({len(monitored_links)} links selected)",
+                font=dict(size=18, color='#2c3e50'),
+                x=0.5
+            ),
+            xaxis=dict(
+                title="Time (seconds)",
+                titlefont=dict(size=14, color='#34495e'),
+                gridcolor='#ecf0f1',
+                gridwidth=1,
+                showgrid=True,
+                zeroline=True,
+                zerolinecolor='#bdc3c7',
+                zerolinewidth=2
+            ),
+            yaxis=dict(
+                title="Flow Rate (m³/s)",
+                titlefont=dict(size=14, color='#34495e'),
+                gridcolor='#ecf0f1',
+                gridwidth=1,
+                showgrid=True,
+                zeroline=True,
+                zerolinecolor='#bdc3c7',
+                zerolinewidth=2
+            ),
             height=400,
-            hovermode='x unified'
+            hovermode='x unified',
+            plot_bgcolor='white',
+            paper_bgcolor='white',
+            legend=dict(
+                bgcolor='rgba(255, 255, 255, 0.8)',
+                bordercolor='#bdc3c7',
+                borderwidth=1,
+                font=dict(size=12)
+            ),
+            margin=dict(l=50, r=50, t=60, b=50)
         )
     
     return fig_pressure, fig_flow 
