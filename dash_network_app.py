@@ -36,7 +36,6 @@ import pandas as pd
 
 # Import our modularized components
 from modules.config import INP_FILE, SIMULATION_DURATION_SECONDS, HYDRAULIC_TIMESTEP_SECONDS
-from debug_helpers import debug_session_state, debug_network_state, debug_event_processing
 from modules.simulation import (
     load_network_model, apply_event_to_simulator, run_simulation_step,
     load_events_from_json, collect_simulation_data, 
@@ -51,9 +50,7 @@ from modules.dash_ui_components import create_event_configuration_modal
 # Global variables to store actual WNTR objects (can't serialize these)
 global_state = {
     'wn': None,
-    'sim': None,
-    'batch_wn': None,
-    'batch_sim': None
+    'sim': None
 }
 
 # Initialize Dash app with Bootstrap theme
@@ -68,7 +65,6 @@ def create_stores():
         dcc.Store(id='network-loaded', data=False),
         dcc.Store(id='current-inp-file', data=INP_FILE),
         dcc.Store(id='sim-initialized', data=False),
-        dcc.Store(id='batch-sim-initialized', data=False),
         
         # User interface selections
         dcc.Store(id='selected-nodes', data=[]),
@@ -81,14 +77,6 @@ def create_stores():
         dcc.Store(id='current-sim-time', data=0),
         dcc.Store(id='simulation-data', data=initialize_simulation_data()),
         
-        # Batch mode state
-        dcc.Store(id='loaded-events', data=[]),
-        dcc.Store(id='event-metadata', data={}),
-        dcc.Store(id='batch-current-sim-time', data=0),
-        dcc.Store(id='batch-scheduled-events', data=[]),
-        dcc.Store(id='batch-applied-events', data=[]),
-        dcc.Store(id='batch-simulation-data', data=initialize_simulation_data()),
-        
         # Monitoring selections
         dcc.Store(id='pressure-monitoring-nodes', data=[]),
         dcc.Store(id='flow-monitoring-links', data=[]),
@@ -100,6 +88,8 @@ def create_stores():
         # Network metadata
         dcc.Store(id='network-metadata', data={}),
     ]
+
+# Batch layout removed - to be implemented from scratch
 
 def create_layout():
     """Create the main application layout."""
@@ -124,18 +114,10 @@ def create_layout():
         # Status messages area
         html.Div(id="status-messages-area"),
         
-        # Tab navigation
-        dbc.Row([
-            dbc.Col([
-                dbc.Tabs([
-                    dbc.Tab(label="🎮 Interactive Mode", tab_id="interactive"),
-                    dbc.Tab(label="📋 Batch Simulator", tab_id="batch"),
-                ], id="main-tabs", active_tab="interactive")
-            ])
-        ], className="mb-4"),
-        
-        # Main content area
-        html.Div(id="main-content"),
+        # Main content area - directly show interactive mode
+        dbc.Row([dbc.Col([create_network_file_selector()])], className="mb-4"),
+        html.Div(id="network-status-display"),
+        html.Div(id="interactive-main-area"),
         
         # Footer
         html.Hr(),
@@ -188,33 +170,7 @@ def create_network_file_selector():
 # Set the app layout
 app.layout = create_layout()
 
-# Callback for tab switching
-@app.callback(
-    Output('main-content', 'children'),
-    Input('main-tabs', 'active_tab')
-)
-def display_tab_content(active_tab):
-    """Display content based on selected tab."""
-    if active_tab == "interactive":
-        return [
-            dbc.Row([dbc.Col([create_network_file_selector()])], className="mb-4"),
-            html.Div(id="network-status-display"),
-            html.Div(id="interactive-main-area")
-        ]
-    elif active_tab == "batch":
-        return [
-            dbc.Row([dbc.Col([
-                dbc.Card([
-                    dbc.CardHeader(html.H4("📋 Batch Event Simulator")),
-                    dbc.CardBody([
-                        dbc.Alert("Load a JSON file with pre-defined events to run automated simulations", 
-                                color="info"),
-                        "Batch functionality will be implemented here..."
-                    ])
-                ])
-            ])], className="mb-4")
-        ]
-    return html.Div("Select a tab")
+# Tab switching removed - showing interactive mode directly
 
 # Callback for file source radio
 @app.callback(
@@ -1238,7 +1194,7 @@ def handle_event_application(btn_clicks, event_types,
                 break
         
         if triggered_idx is None or not event_types[triggered_idx]:
-            return scheduled_events or [], ""
+            return scheduled_events or [], "", dash.no_update
         
         # Collect parameters for this specific element/event
         parameters = {}

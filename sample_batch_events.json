@@ -1,0 +1,62 @@
+{
+  "metadata": {
+    "description": "Emergency Response Scenario - Pipe Failure and Leak Management",
+    "generated_at": "2024-01-01 12:00:00",
+    "total_events": 5,
+    "duration_seconds": 3600
+  },
+  "events": [
+    {
+      "time": 300,
+      "element_name": "1",
+      "element_type": "Junction",
+      "element_category": "node",
+      "event_type": "start_leak",
+      "parameters": {
+        "leak_area": 0.005,
+        "leak_discharge_coefficient": 0.75
+      },
+      "description": "Small leak detected at Junction 1"
+    },
+    {
+      "time": 600,
+      "element_name": "10101",
+      "element_type": "Pipe",
+      "element_category": "link", 
+      "event_type": "close_pipe",
+      "parameters": {},
+      "description": "Isolate damaged pipe 10101"
+    },
+    {
+      "time": 900,
+      "element_name": "2",
+      "element_type": "Junction",
+      "element_category": "node",
+      "event_type": "add_demand",
+      "parameters": {
+        "base_demand": 0.2,
+        "pattern_name": "emergency_pattern",
+        "category": "emergency"
+      },
+      "description": "Increase demand for emergency services at node 2"
+    },
+    {
+      "time": 1800,
+      "element_name": "1",
+      "element_type": "Junction",
+      "element_category": "node",
+      "event_type": "stop_leak",
+      "parameters": {},
+      "description": "Leak repair completed at Junction 1"
+    },
+    {
+      "time": 2400,
+      "element_name": "10101",
+      "element_type": "Pipe",
+      "element_category": "link",
+      "event_type": "open_pipe",
+      "parameters": {},
+      "description": "Restore service on repaired pipe 10101"
+    }
+  ]
+} 
