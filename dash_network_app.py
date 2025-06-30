@@ -230,8 +230,14 @@ def create_layout():
         html.Footer([
             html.P("Interactive Network Simulator | Built with Dash & Plotly", 
                   className="text-center text-muted small")
-        ])
+        ]),
         
+        # Hidden placeholders for interactive control buttons so Dash knows the ids at startup
+        html.Div([
+            html.Button(id="step-btn", style={"display": "none"}),
+            html.Button(id="play-step-btn", style={"display": "none"}),
+            html.Button(id="pause-step-btn", style={"display": "none"})
+        ], style={"display": "none"}),
     ], fluid=True, className="px-4 py-3")
 
 def create_network_file_selector():
@@ -403,7 +409,9 @@ def create_interactive_content():
     return [
         dbc.Row([dbc.Col([create_network_file_selector()])], className="mb-4"),
         html.Div(id="network-status-display"),
-        html.Div(id="interactive-main-area")
+        html.Div(id="interactive-main-area"),
+        # Interval for auto-stepping when Play is active
+        dcc.Interval(id="interactive-play-interval", interval=1000, n_intervals=0, disabled=True)
     ]
 
 def create_batch_content():
@@ -418,14 +426,40 @@ def create_batch_content():
                 dbc.Card([
                     dbc.CardHeader(html.H4("🎬 Batch Event Simulation")),
                     dbc.CardBody([
-                        dbc.Alert([
-                            "This mode automatically processes events from ",
-                            html.Strong("generated_events_NET_4_20250629_155628.json"),
-                            " with animation controls."
-                        ], color="info", className="mb-3"),
+                        dbc.Alert("Load event schedule for batch simulation.", color="info", className="mb-3"),
                         
-                        # Simple load button
-                        dbc.Button("📋 Load Example Events", id="load-events-btn", color="success", size="lg")
+                        # Event file source selection
+                        dbc.Label("Event Source:", className="fw-bold"),
+                        dbc.RadioItems([
+                            {"label": "📋 Use Example Events", "value": "example"},
+                            {"label": "📤 Upload Custom Events", "value": "upload"}
+                        ], value="example", id="event-file-source-radio", className="mb-3"),
+
+                        # Example events dropdown
+                        html.Div([
+                            dbc.Label("Choose example events:", className="fw-bold"),
+                            dbc.Select([
+                                {"label": "Generated Events 1", "value": "generated_events1.json"},
+                                {"label": "Generated Events 2", "value": "generated_events2.json"}
+                            ], value="generated_events1.json", id="example-events-select")
+                        ], id="example-events-div"),
+
+                        # Upload JSON
+                        html.Div([
+                            dbc.Label("Upload Events JSON:", className="fw-bold"),
+                            dcc.Upload([
+                                html.Div(["Drag and Drop or ", html.A("Select File", className="text-primary")], className="text-center p-4 border border-dashed rounded")
+                            ], id="upload-events-file", multiple=False),
+                            html.Div(id="upload-events-status"),
+                            dbc.Button("📋 Load Uploaded Events", id="load-uploaded-events-btn", color="success", className="mt-2", size="lg")
+                        ], id="upload-events-div", style={"display": "none"}),
+                        
+                        # Buttons shown only for example source
+                        html.Div([
+                            dbc.Button("📋 Load Events", id="load-events-btn", color="success", size="lg"),
+                            dbc.Button("⬇️ Download Example Events", id="download-events-btn", color="info", className="ms-2", size="lg"),
+                            dcc.Download(id="download-example-events")
+                        ], id="example-events-buttons-div")
                     ])
                 ])
             ], width=12)
@@ -685,7 +719,8 @@ def display_interactive_main(network_loaded, metadata):
                         dbc.ButtonGroup([
                             dbc.Button("🚀 Initialize", id="init-btn", color="success"),
                             dbc.Button("⏭️ Step", id="step-btn", color="primary", disabled=True),
-                            dbc.Button("⏩ Step x5", id="big-step-btn", color="primary", disabled=True),
+                            dbc.Button("▶️ Play", id="play-step-btn", color="success", disabled=True),
+                            dbc.Button("⏸️ Pause", id="pause-step-btn", color="warning", disabled=True),
                             dbc.Button("🔄 Reset", id="reset-btn", color="secondary")
                         ], className="w-100")
                     ])
@@ -989,7 +1024,7 @@ def handle_simulation_reset(n_clicks, network_loaded):
      Output('scheduled-events', 'data', allow_duplicate=True),
      Output('status-messages-area', 'children', allow_duplicate=True)],
     [Input('step-btn', 'n_clicks'),
-     Input('big-step-btn', 'n_clicks')],
+     Input('interactive-play-interval', 'n_intervals')],
     [State('sim-initialized', 'data'),
      State('current-sim-time', 'data'),
      State('simulation-data', 'data'),
@@ -999,18 +1034,16 @@ def handle_simulation_reset(n_clicks, network_loaded):
      State('flow-monitoring-links', 'data')],
     prevent_initial_call=True
 )
-def handle_simulation_step(step_clicks, big_step_clicks, sim_initialized, current_time, sim_data, 
-                          scheduled_events, applied_events, monitored_nodes, monitored_links):
+def handle_simulation_step(step_clicks, play_intervals, sim_initialized, current_time, sim_data, 
+                           scheduled_events, applied_events, monitored_nodes, monitored_links):
     """Handle simulation step button."""
-    # Determine which button triggered the callback
     triggered_id = ctx.triggered_id if hasattr(ctx, "triggered_id") else None
 
-    # No relevant trigger or simulation not ready
-    if triggered_id not in ["step-btn", "big-step-btn"] or not sim_initialized or global_state['sim'] is None:
+    # valid triggers: manual step or interval tick
+    if triggered_id not in ["step-btn", "interactive-play-interval"] or not sim_initialized or global_state['sim'] is None:
         return no_update, no_update, no_update, no_update, no_update
 
-    # Decide how many individual steps to execute
-    step_multiplier = 5 if triggered_id == "big-step-btn" else 1
+    step_multiplier = 1  # always single step per trigger
  
     try:
         from modules.simulation import apply_event_to_simulator, run_simulation_step, collect_simulation_data, initialize_simulation_data
@@ -1071,13 +1104,34 @@ def handle_simulation_step(step_clicks, big_step_clicks, sim_initialized, curren
 # Update step button state
 @app.callback(
     [Output('step-btn', 'disabled'),
-     Output('big-step-btn', 'disabled')],
+     Output('play-step-btn', 'disabled'),
+     Output('pause-step-btn', 'disabled')],
     Input('sim-initialized', 'data')
 )
-def update_step_button(sim_initialized):
-    """Enable/disable step button based on simulation state."""
+def enable_manual_controls(sim_initialized):
+    """Enable Step and Play when simulation ready."""
     disabled_state = not (sim_initialized or False)
-    return disabled_state, disabled_state
+    return disabled_state, disabled_state, disabled_state
+
+# Play / Pause toggle callback
+@app.callback(
+    [Output('interactive-play-interval', 'disabled'),
+     Output('play-step-btn', 'disabled', allow_duplicate=True),
+     Output('pause-step-btn', 'disabled', allow_duplicate=True)],
+    [Input('play-step-btn', 'n_clicks'),
+     Input('pause-step-btn', 'n_clicks')],
+    State('interactive-play-interval', 'disabled'),
+    prevent_initial_call=True
+)
+def control_auto_stepping(play_clicks, pause_clicks, interval_disabled):
+    ctx_id = ctx.triggered_id if hasattr(ctx, 'triggered_id') else None
+    if ctx_id == 'play-step-btn':
+        # start auto stepping
+        return False, True, False  # interval enabled, play disabled, pause enabled
+    elif ctx_id == 'pause-step-btn':
+        return True, False, True   # interval disabled, play enabled, pause disabled
+    # no change
+    return interval_disabled, dash.no_update, dash.no_update
 
 # Simulation progress display callback
 @app.callback(
@@ -1768,19 +1822,21 @@ def update_current_values_display(current_time, sim_initialized, monitored_nodes
      Output('batch-metadata', 'data'),
      Output('status-messages-area', 'children', allow_duplicate=True)],
     Input('load-events-btn', 'n_clicks'),
+    [State('example-events-select', 'value'),
+     State('upload-events-file', 'contents'),
+     State('upload-events-file', 'filename')],
     prevent_initial_call=True
 )
-def load_batch_events(n_clicks):
-    """Load events from the example JSON file for batch simulation."""
-    if n_clicks is None or n_clicks == 0:
+def load_batch_events(n_clicks, example_file_value, upload_contents, upload_filename):
+    """Load events from example JSON file."""
+    if not n_clicks:
         return [], {}, ""
     
+    import json, os
     try:
-        # Load the specific example file
-        example_file = "generated_events_NET_4_20250629_155628.json"
+        path_to_load = example_file_value or "generated_events_NET_4_20250629_155628.json"
         
-        import json
-        with open(example_file, 'r') as f:
+        with open(path_to_load, 'r') as f:
             data = json.load(f)
         
         if 'events' in data and 'metadata' in data:
@@ -1792,17 +1848,33 @@ def load_batch_events(n_clicks):
         
         if events:
             success_msg = dbc.Alert(
-                f"✅ Loaded {len(events)} events from {example_file}! Duration: {metadata.get('duration_hours', 'N/A')} hours",
+                f"✅ Loaded {len(events)} events from {path_to_load}! Duration: {metadata.get('duration_hours', 'N/A')} hours",
                 color="success", dismissable=True
             )
             return events, metadata, success_msg
         else:
             error_msg = dbc.Alert("❌ No events found in file", color="danger")
             return [], {}, error_msg
-            
     except Exception as e:
         error_msg = dbc.Alert(f"❌ Error loading events: {str(e)}", color="danger")
         return [], {}, error_msg
+
+# Download example events file callback
+@app.callback(
+    Output('download-example-events', 'data'),
+    Input('download-events-btn', 'n_clicks'),
+    State('example-events-select', 'value'),
+    prevent_initial_call=True
+)
+def download_example_events(n_clicks, selected_example):
+    if not n_clicks or not selected_example:
+        return dash.no_update
+    import os
+    from dash import dcc
+    file_path = selected_example
+    if not os.path.exists(file_path):
+        return dash.no_update
+    return dcc.send_file(file_path)
 
 # Batch simulation main area callback
 @app.callback(
@@ -1867,20 +1939,11 @@ def display_batch_main_area(network_loaded, batch_events, batch_metadata):
                             dbc.Button("🔄 Reset", id="batch-reset-btn", color="secondary")
                         ], className="w-100 mb-3"),
                         
-                        # Quick jump
-                        dbc.Row([
-                            dbc.Col([
-                                dbc.Label("Jump to time (hours):", className="fw-bold"),
-                                dbc.Input(
-                                    type="number", value=0, min=0, 
-                                    max=int(total_duration_hours), step=1,
-                                    id="batch-jump-time-input"
-                                )
-                            ], width=8),
-                            dbc.Col([
-                                dbc.Button("⏭️ Jump", id="batch-jump-btn", color="info", className="mt-4")
-                            ], width=4)
-                        ])
+                        # Quick jump removed (hidden to avoid callback errors)
+                        html.Div([
+                            dbc.Input(id="batch-jump-time-input", style={"display":"none"}),
+                            dbc.Button(id="batch-jump-btn", style={"display":"none"})
+                        ], style={"display":"none"})
                     ])
                 ], className="mb-3"),
                 
@@ -2562,6 +2625,71 @@ def handle_batch_jump(n_clicks, jump_hours, batch_events, network_loaded):
         print(f"Error jumping to time: {e}")
         return no_update, no_update, no_update
 
+# Toggle event source UI
+@app.callback(
+    [Output('example-events-div', 'style'),
+     Output('upload-events-div', 'style'),
+     Output('example-events-buttons-div', 'style')],
+    Input('event-file-source-radio', 'value'),
+    prevent_initial_call=True
+)
+def toggle_event_source(src):
+    if src == 'example':
+        return {"display":"block"}, {"display":"none"}, {"display":"block"}
+    return {"display":"none"}, {"display":"block"}, {"display":"none"}
+
+# Manual load for uploaded events
+@app.callback(
+    [Output('batch-events', 'data', allow_duplicate=True),
+     Output('batch-metadata', 'data', allow_duplicate=True),
+     Output('status-messages-area', 'children', allow_duplicate=True)],
+    Input('load-uploaded-events-btn', 'n_clicks'),
+    [State('upload-events-file', 'contents'),
+     State('upload-events-file', 'filename'),
+     State('event-file-source-radio', 'value')],
+    prevent_initial_call=True
+)
+def load_uploaded_events_btn(n_clicks, contents, filename, src_value):
+    if not n_clicks or src_value != 'upload' or contents is None or filename is None:
+        return no_update, no_update, no_update
+    import json, base64, tempfile, os
+    try:
+        _, content_string = contents.split(',')
+        decoded = base64.b64decode(content_string)
+        with tempfile.NamedTemporaryFile(mode='wb', delete=False, suffix='.json') as tmp:
+            tmp.write(decoded)
+            tmp_path = tmp.name
+        with open(tmp_path, 'r') as f:
+            data = json.load(f)
+        if 'events' in data and 'metadata' in data:
+            events = data['events']
+            metadata = data['metadata']
+        else:
+            events = data if isinstance(data, list) else []
+            metadata = {}
+        if events:
+            msg = dbc.Alert(f"✅ Loaded {len(events)} events from {filename}!", color="success", dismissable=True)
+            return events, metadata, msg
+        else:
+            msg = dbc.Alert("❌ No events found in uploaded file", color="danger", dismissable=True)
+            return [], {}, msg
+    except Exception as e:
+        msg = dbc.Alert(f"❌ Error loading uploaded events: {str(e)}", color="danger", dismissable=True)
+        return [], {}, msg
+    finally:
+        if 'tmp_path' in locals() and os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+
+# Show selected filename after upload (does NOT load automatically)
+@app.callback(
+    Output('upload-events-status', 'children'),
+    Input('upload-events-file', 'filename'),
+    prevent_initial_call=True
+)
+def show_upload_selected(filename):
+    if filename:
+        return dbc.Alert(f"Selected file: {filename}. Click 'Load Uploaded Events' to import.", color="info")
+    return ""
 
 
 if __name__ == '__main__':
