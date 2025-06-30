@@ -3,7 +3,7 @@
 A powerful web-based tool for simulating water network events and analyzing their impacts on hydraulic performance. Built with Streamlit and WNTR (Water Network Tool for Resilience), this simulator provides both interactive and batch simulation capabilities for water distribution system analysis.
 
 ![Water Network Simulator](https://img.shields.io/badge/Python-3.8+-blue.svg)
-![Streamlit](https://img.shields.io/badge/Streamlit-1.28+-red.svg)
+![Dash](https://img.shields.io/badge/Dash-2.14+-red.svg)
 ![WNTR](https://img.shields.io/badge/WNTR-1.2+-green.svg)
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 
@@ -120,7 +120,7 @@ interactive-water-network-simulator/
 │   ├── config.py                  # Configuration and constants
 │   ├── simulation.py              # WNTR simulation logic
 │   ├── visualization.py           # Network plotting and charts
-│   ├── ui_components.py           # Streamlit UI components
+│   ├── dash_ui_components.py      # Re-usable Dash components
 │   ├── event_generator.py         # Automatic event generation
 │   └── batch_simulator_functions.py # Batch simulation capabilities
 ├── debug_helpers.py               # Development debugging tools
@@ -202,43 +202,30 @@ NODE_EVENTS = {
 ### Core Modules
 
 #### `simulation.py`
-- WNTR integration and network loading
-- Event application and execution
-- Hydraulic simulation management
-- Results collection and organization
+* WNTR integration and network loading
+* Event application / execution
+* Hydraulic simulation management
+* Result collection
 
 #### `visualization.py`
-- Interactive network maps with Plotly
-- Pressure and flow color coding
-- Time-series monitoring charts
-- Professional visualization themes
+* Network plots with Plotly
+* Pressure / flow color bars
+* Time-series charts
 
-#### `ui_components.py`
-- Reusable Streamlit interface elements
-- Form handling and user input validation
-- Status displays and progress indicators
-- Event configuration interfaces
+#### `dash_ui_components.py`
+* Re-usable Dash components (cards, dropdowns, etc.)
+* Status displays and progress bars
+* Event configuration modal
 
 #### `config.py`
-- Central configuration management
-- Event type definitions
-- Color schemes and styling
-- Default parameter settings
+* Central config (event definitions, color palettes)
+* Default simulation parameters
 
-## 🐛 Debugging and Development
+## 🐛 Debugging Tips
 
-### Debug Mode
-Enable debug mode in the sidebar to see:
-- Session state variables
-- Network model status
-- Event processing details
-- Performance metrics
-
-### Development Tips
-- Use `debug_helpers.py` for troubleshooting
-- Monitor browser console for JavaScript errors
-- Check Streamlit terminal output for Python errors
-- Use browser developer tools for layout debugging
+* Use browser DevTools console for any client-side errors.
+* Server logs appear in the terminal (or `flyctl logs`).
+* Enable Dash Dev Tools (`app.run_server(debug=True)`) when running `python dash_network_app.py` for hot-reload and callback graph visualiser.
 
 ## 🤝 Contributing
 
