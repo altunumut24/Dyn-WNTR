@@ -34,4 +34,3 @@ from .simulation import *                # Core simulation and event handling fu
 from .visualization import *             # Network plotting and visualization functions
 from .ui_components import *             # Streamlit UI components and forms
 from .batch_simulator_functions import * # Batch simulation capabilities
-from .event_generator import *           # Automatic event generation functions 
