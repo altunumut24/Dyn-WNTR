@@ -57,10 +57,12 @@ def create_simple_monitoring_chart(elements, selected_elements, chart_type="pres
         chart_title = f"🔵 Pressure Monitoring ({len(selected_elements)} nodes)"
         y_label = "Pressure (m)"
         base_value = 30
+        data_key = "pressures"
     else:
         chart_title = f"🔗 Flow Monitoring ({len(selected_elements)} links)"
         y_label = "Flow (m³/s)"
         base_value = 0.5
+        data_key = "flows"
     
     # Colors for traces
     colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', 
@@ -72,13 +74,13 @@ def create_simple_monitoring_chart(elements, selected_elements, chart_type="pres
             element_index = elements.index(element)
             
             # Use real simulation data if available, otherwise generate sample data
-            if sim_data and 'time_data' in sim_data:
-                time_data = list(range(len(sim_data['time_data'])))
-                if chart_type == "pressure" and 'pressure_data' in sim_data:
-                    y_data = sim_data['pressure_data'].get(element, [base_value] * len(time_data))
-                elif chart_type == "flow" and 'flow_data' in sim_data:
-                    y_data = sim_data['flow_data'].get(element, [base_value] * len(time_data))
+            if sim_data and 'time' in sim_data and data_key in sim_data:
+                time_data = list(sim_data['time'])
+                element_series = sim_data[data_key].get(element, None)
+                if element_series is not None and len(element_series) == len(time_data):
+                    y_data = element_series
                 else:
+                    # fallback to base pattern if lengths mismatch
                     y_data = [base_value + element_index*2 + 0.1*t for t in time_data]
             else:
                 # Generate sample data for demonstration
@@ -519,6 +521,11 @@ def load_network_callback(n_clicks, source, example_file, upload_contents, uploa
             # Store network in global state
             global_state['wn'] = wn
             
+            # Keep an untouched copy of the original network for reset purposes
+            import copy
+            global_state['original_wn'] = copy.deepcopy(wn)
+            global_state['network_file_path'] = file_path
+            
             # Create simulator instance
             from mwntr.sim.interactive_network_simulator import MWNTRInteractiveSimulator
             global_state['sim'] = MWNTRInteractiveSimulator(wn)
@@ -678,6 +685,7 @@ def display_interactive_main(network_loaded, metadata):
                         dbc.ButtonGroup([
                             dbc.Button("🚀 Initialize", id="init-btn", color="success"),
                             dbc.Button("⏭️ Step", id="step-btn", color="primary", disabled=True),
+                            dbc.Button("⏩ Step x5", id="big-step-btn", color="primary", disabled=True),
                             dbc.Button("🔄 Reset", id="reset-btn", color="secondary")
                         ], className="w-100")
                     ])
@@ -953,6 +961,17 @@ def handle_simulation_reset(n_clicks, network_loaded):
     try:
         # Reset simulation
         from modules.simulation import reset_simulation_state, initialize_simulation_data
+        import copy
+        # Restore the pristine network if available, otherwise reload from file if possible
+        if 'original_wn' in global_state:
+            global_state['wn'] = copy.deepcopy(global_state['original_wn'])
+        elif 'network_file_path' in global_state:
+            from modules.simulation import load_network_model
+            try:
+                global_state['wn'] = load_network_model(global_state['network_file_path'])
+            except Exception:
+                pass  # Fall back to existing wn if reload fails
+
         global_state['sim'] = reset_simulation_state(global_state['wn'])
         
         status = dbc.Alert("🔄 Simulation Reset Complete!", color="info")
@@ -969,7 +988,8 @@ def handle_simulation_reset(n_clicks, network_loaded):
      Output('applied-events', 'data', allow_duplicate=True),
      Output('scheduled-events', 'data', allow_duplicate=True),
      Output('status-messages-area', 'children', allow_duplicate=True)],
-    Input('step-btn', 'n_clicks'),
+    [Input('step-btn', 'n_clicks'),
+     Input('big-step-btn', 'n_clicks')],
     [State('sim-initialized', 'data'),
      State('current-sim-time', 'data'),
      State('simulation-data', 'data'),
@@ -979,73 +999,85 @@ def handle_simulation_reset(n_clicks, network_loaded):
      State('flow-monitoring-links', 'data')],
     prevent_initial_call=True
 )
-def handle_simulation_step(step_clicks, sim_initialized, current_time, sim_data, 
+def handle_simulation_step(step_clicks, big_step_clicks, sim_initialized, current_time, sim_data, 
                           scheduled_events, applied_events, monitored_nodes, monitored_links):
     """Handle simulation step button."""
-    if not step_clicks or not sim_initialized or global_state['sim'] is None:
+    # Determine which button triggered the callback
+    triggered_id = ctx.triggered_id if hasattr(ctx, "triggered_id") else None
+
+    # No relevant trigger or simulation not ready
+    if triggered_id not in ["step-btn", "big-step-btn"] or not sim_initialized or global_state['sim'] is None:
         return no_update, no_update, no_update, no_update, no_update
-    
+
+    # Decide how many individual steps to execute
+    step_multiplier = 5 if triggered_id == "big-step-btn" else 1
+ 
     try:
         from modules.simulation import apply_event_to_simulator, run_simulation_step, collect_simulation_data, initialize_simulation_data
-        
+ 
         sim = global_state['sim']
         wn = global_state['wn']
-        
+ 
         # Initialize variables
         current_time = current_time or 0
         sim_data = sim_data or initialize_simulation_data()
         scheduled_events = scheduled_events or []
         applied_events = applied_events or []
         status_messages = []
-        
-        # Apply scheduled events that are due
-        events_to_apply = [e for e in scheduled_events 
-                          if e.get('scheduled_time', e.get('time', 0)) <= current_time]
-        
         new_applied_events = list(applied_events)
         new_scheduled_events = list(scheduled_events)
-        
-        for event in events_to_apply:
-            success, message = apply_event_to_simulator(sim, wn, event)
-            if success:
-                new_applied_events.append(event)
-                new_scheduled_events.remove(event)
-                status_messages.append(dbc.Alert(f"⚡ Applied: {message}", color="success", dismissable=True))
-            else:
-                status_messages.append(dbc.Alert(f"❌ Failed: {message}", color="danger", dismissable=True))
-        
-        # Run simulation step
-        success, new_sim_time, message = run_simulation_step(sim, wn)
-        
-        if success:
-            # Update simulation data
-            new_sim_data = dict(sim_data)
+        new_sim_data = dict(sim_data)
+
+        # Execute the required number of steps
+        for _ in range(step_multiplier):
+            # Apply scheduled events that are due for the CURRENT time
+            events_to_apply = [e for e in new_scheduled_events 
+                              if e.get('scheduled_time', e.get('time', 0)) <= current_time]
+
+            for event in events_to_apply:
+                success, message = apply_event_to_simulator(sim, wn, event)
+                if success:
+                    new_applied_events.append(event)
+                    new_scheduled_events.remove(event)
+                    status_messages.append(dbc.Alert(f"⚡ Applied: {message}", color="success", dismissable=True))
+                else:
+                    status_messages.append(dbc.Alert(f"❌ Failed: {message}", color="danger", dismissable=True))
+
+            # Run a single simulation step
+            success, new_sim_time, message = run_simulation_step(sim, wn)
+
+            if not success:
+                status_messages.append(dbc.Alert(f"⚠️ Step warning: {message}", color="warning", dismissable=True))
+                break
+
+            # Update tracking variables
+            current_time = new_sim_time
             new_sim_data['time'].append(new_sim_time)
-            
+
             # Collect data for monitored elements
             monitored_nodes = monitored_nodes or list(wn.node_name_list)[:5]
             monitored_links = monitored_links or list(wn.link_name_list)[:5]
             collect_simulation_data(wn, monitored_nodes, monitored_links, new_sim_data)
-            
+
+        if not status_messages:
             status_messages.append(dbc.Alert("✅ Step completed successfully!", color="success", dismissable=True))
-            
-            return new_sim_time, new_sim_data, new_applied_events, new_scheduled_events, status_messages
-        else:
-            status_messages.append(dbc.Alert(f"⚠️ Step warning: {message}", color="warning", dismissable=True))
-            return current_time, sim_data, new_applied_events, new_scheduled_events, status_messages
-            
+
+        return current_time, new_sim_data, new_applied_events, new_scheduled_events, status_messages
+ 
     except Exception as e:
         error_msg = dbc.Alert(f"❌ Step error: {str(e)}", color="danger", dismissable=True)
         return no_update, no_update, no_update, no_update, [error_msg]
 
 # Update step button state
 @app.callback(
-    Output('step-btn', 'disabled'),
+    [Output('step-btn', 'disabled'),
+     Output('big-step-btn', 'disabled')],
     Input('sim-initialized', 'data')
 )
 def update_step_button(sim_initialized):
     """Enable/disable step button based on simulation state."""
-    return not (sim_initialized or False)
+    disabled_state = not (sim_initialized or False)
+    return disabled_state, disabled_state
 
 # Simulation progress display callback
 @app.callback(
@@ -1700,18 +1732,26 @@ def update_current_values_display(current_time, sim_initialized, monitored_nodes
         if monitored_nodes and current_pressures:
             for node_name in (monitored_nodes or [])[:3]:  # Show max 3 for space
                 if node_name in current_pressures:
-                    pressure = current_pressures[node_name]
+                    press_val = current_pressures[node_name]
+                    try:
+                        press_text = f"{float(press_val):.2f} m"
+                    except (TypeError, ValueError):
+                        press_text = "N/A"
                     elements.append(
-                        html.P(f"🔵 {node_name}: {pressure:.2f} m", className="mb-1 small")
+                        html.P(f"🔵 {node_name}: {press_text}", className="mb-1 small")
                     )
         
         # Show current flows
         if monitored_links and current_flows:
             for link_name in (monitored_links or [])[:3]:  # Show max 3 for space
                 if link_name in current_flows:
-                    flow = current_flows[link_name]
+                    flow_val = current_flows[link_name]
+                    try:
+                        flow_text = f"{float(flow_val):.4f} m³/s"
+                    except (TypeError, ValueError):
+                        flow_text = "N/A"
                     elements.append(
-                        html.P(f"🔗 {link_name}: {flow:.4f} m³/s", className="mb-1 small")
+                        html.P(f"🔗 {link_name}: {flow_text}", className="mb-1 small")
                     )
         
         if not elements:
@@ -1948,6 +1988,16 @@ def reset_batch_animation(n_clicks, network_loaded):
             from modules.simulation import reset_simulation_state, initialize_simulation_data
             from mwntr.sim.interactive_network_simulator import MWNTRInteractiveSimulator
             
+            import copy
+            if 'original_wn' in global_state:
+                global_state['wn'] = copy.deepcopy(global_state['original_wn'])
+            elif 'network_file_path' in global_state:
+                from modules.simulation import load_network_model
+                try:
+                    global_state['wn'] = load_network_model(global_state['network_file_path'])
+                except Exception:
+                    pass
+
             # Create fresh simulator instance
             global_state['sim'] = MWNTRInteractiveSimulator(global_state['wn'])
             
@@ -2490,7 +2540,7 @@ def handle_batch_jump(n_clicks, jump_hours, batch_events, network_loaded):
         # Reset simulation to start
         if global_state['wn'] is not None:
             from modules.simulation import reset_simulation_state, initialize_simulation_data
-            global_state['sim'] = reset_simulation_state(global_state['wn'])
+        global_state['sim'] = reset_simulation_state(global_state['wn'])
         
         # Apply all events up to jump time without running simulation steps
         events_to_apply = [e for e in batch_events if e.get('time', 0) <= jump_seconds]
@@ -2531,3 +2581,4 @@ if __name__ == "__main__":
     print("📊 Clean charts update when you select elements")
     print("🗑️ Easy add/remove functionality")
     app.run(debug=True)
+        
