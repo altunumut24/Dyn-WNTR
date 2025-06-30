@@ -1954,13 +1954,13 @@ def display_batch_main_area(network_loaded, batch_events, batch_metadata):
                         html.Div(id="batch-event-timeline")
                     ])
                 ]),
-                # Event history list
-                dbc.Card([
-                    dbc.CardHeader(html.H5("🕑 Event History")),
-                    dbc.CardBody([
-                        html.Div(id="batch-event-history-container")
-                    ])
-                ])
+                # Event history list as collapsible accordion
+                dbc.Accordion([
+                    dbc.AccordionItem(
+                        html.Div(id="batch-event-history-container"),
+                        title="🕑 Event History"
+                    )
+                ], start_collapsed=True)
             ], width=4),
             
             # Map and monitoring column
