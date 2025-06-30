@@ -22,3 +22,5 @@ wheel>=0.37.0
 
 # Deployment
 gunicorn>=20.1.0
+
+streamlit
