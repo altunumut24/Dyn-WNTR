@@ -406,10 +406,105 @@ def render_tab_content(active_tab):
 
 def create_interactive_content():
     """Create the interactive mode content."""
+    interactive_main_content = [
+        dbc.Row([
+            # Map column
+            dbc.Col([
+                # Map controls
+                dbc.Card([
+                    dbc.CardBody([
+                        dbc.Alert("🖱️ Click on nodes (circles) or links (squares) to select and configure events", 
+                                color="info", className="mb-3"),
+                        dbc.Row([
+                            dbc.Col([
+                                dbc.Label("Map Height"),
+                                dbc.Select([
+                                    {"label": "700px", "value": 700},
+                                    {"label": "800px", "value": 800},
+                                    {"label": "900px", "value": 900},
+                                    {"label": "1000px", "value": 1000}
+                                ], value=800, id="map-height-select")
+                            ], width=4),
+                            dbc.Col([
+                                dbc.Label("Node Size"),
+                                dbc.Select([
+                                    {"label": "60%", "value": 0.6},
+                                    {"label": "80%", "value": 0.8},
+                                    {"label": "100%", "value": 1.0},
+                                    {"label": "120%", "value": 1.2}
+                                ], value=1.0, id="node-size-select")
+                            ], width=4),
+                            dbc.Col([
+                                dbc.Button("🧭 Legend", id="legend-btn", color="info", size="sm")
+                            ], width=4)
+                        ])
+                    ])
+                ], className="mb-3"),
+                
+                # Network map
+                html.Div(id="network-map-container"),
+                
+                # Color legends
+                html.Div(id="color-legends-container")
+            ], width=8),
+            
+            # Control panel column (simplified)
+            dbc.Col([
+                # Simulation controls
+                dbc.Card([
+                    dbc.CardHeader(html.H5("⚡ Simulation Controls")),
+                    dbc.CardBody([
+                        html.Div(id="sim-status"),
+                        
+                        # Simulation progress
+                        html.Div(id="simulation-progress-display", className="mb-3"),
+                        
+                        # Planning controls
+                        dbc.Row([
+                            dbc.Col([
+                                dbc.Label("Duration (hours)"),
+                                dbc.Input(id="duration-input", type="number", 
+                                        value=24, min=1, max=168, step=1)
+                            ], width=6),
+                            dbc.Col([
+                                dbc.Label("Timestep (minutes)"),
+                                dbc.Select([
+                                    {"label": "15 min", "value": 15},
+                                    {"label": "30 min", "value": 30},
+                                    {"label": "60 min", "value": 60},
+                                    {"label": "120 min", "value": 120},
+                                ], value=60, id="timestep-select")
+                            ], width=6)
+                        ], className="mb-3"),
+                        
+                        # Control buttons
+                        dbc.ButtonGroup([
+                            dbc.Button("🚀 Initialize", id="init-btn", color="success"),
+                            dbc.Button("⏭️ Step", id="step-btn", color="primary", disabled=True),
+                            dbc.Button("▶️ Play", id="play-step-btn", color="success", disabled=True),
+                            dbc.Button("⏸️ Pause", id="pause-step-btn", color="warning", disabled=True),
+                            dbc.Button("🔄 Reset", id="reset-btn", color="secondary")
+                        ], className="w-100")
+                    ])
+                ], className="mb-3")
+            ], width=4)
+        ]),
+        
+        # Results section
+        html.Hr(),
+        html.Div(id="simulation-results-container"),
+        
+        # Event configuration modal
+        create_event_configuration_modal()
+    ]
+    
     return [
         dbc.Row([dbc.Col([create_network_file_selector()])], className="mb-4"),
         html.Div(id="network-status-display"),
-        html.Div(id="interactive-main-area"),
+        html.Div(id="interactive-main-area-info", children=[
+             dbc.Alert("👆 Please load a network file to begin simulation", color="info")
+        ]),
+        html.Div(id="interactive-main-area", style={'display': 'none'}, children=interactive_main_content),
         # Interval for auto-stepping when Play is active
         dcc.Interval(id="interactive-play-interval", interval=1000, n_intervals=0, disabled=True)
     ]
@@ -634,107 +729,16 @@ def display_network_status(network_loaded, metadata, current_element, scheduled_
 
 # Interactive main area callback
 @app.callback(
-    Output('interactive-main-area', 'children'),
-    [Input('network-loaded', 'data'),
-     Input('network-metadata', 'data')],
+    [Output('interactive-main-area', 'style'),
+     Output('interactive-main-area-info', 'style')],
+    Input('network-loaded', 'data'),
     prevent_initial_call=True
 )
-def display_interactive_main(network_loaded, metadata):
-    """Display the main interactive area when network is loaded."""
-    if not network_loaded:
-        return dbc.Alert("👆 Please load a network file to begin simulation", color="info")
-    
-    return [
-        dbc.Row([
-            # Map column
-            dbc.Col([
-                # Map controls
-                dbc.Card([
-                    dbc.CardBody([
-                        dbc.Alert("🖱️ Click on nodes (circles) or links (squares) to select and configure events", 
-                                color="info", className="mb-3"),
-                        dbc.Row([
-                            dbc.Col([
-                                dbc.Label("Map Height"),
-                                dbc.Select([
-                                    {"label": "700px", "value": 700},
-                                    {"label": "800px", "value": 800},
-                                    {"label": "900px", "value": 900},
-                                    {"label": "1000px", "value": 1000}
-                                ], value=800, id="map-height-select")
-                            ], width=4),
-                            dbc.Col([
-                                dbc.Label("Node Size"),
-                                dbc.Select([
-                                    {"label": "60%", "value": 0.6},
-                                    {"label": "80%", "value": 0.8},
-                                    {"label": "100%", "value": 1.0},
-                                    {"label": "120%", "value": 1.2}
-                                ], value=1.0, id="node-size-select")
-                            ], width=4),
-                            dbc.Col([
-                                dbc.Button("🧭 Legend", id="legend-btn", color="info", size="sm")
-                            ], width=4)
-                        ])
-                    ])
-                ], className="mb-3"),
-                
-                # Network map
-                html.Div(id="network-map-container"),
-                
-                # Color legends
-                html.Div(id="color-legends-container")
-            ], width=8),
-            
-            # Control panel column (simplified)
-            dbc.Col([
-                # Simulation controls
-                dbc.Card([
-                    dbc.CardHeader(html.H5("⚡ Simulation Controls")),
-                    dbc.CardBody([
-                        html.Div(id="sim-status"),
-                        
-                        # Simulation progress
-                        html.Div(id="simulation-progress-display", className="mb-3"),
-                        
-                        # Planning controls
-                        dbc.Row([
-                            dbc.Col([
-                                dbc.Label("Duration (hours)"),
-                                dbc.Input(id="duration-input", type="number", 
-                                        value=24, min=1, max=168, step=1)
-                            ], width=6),
-                            dbc.Col([
-                                dbc.Label("Timestep (minutes)"),
-                                dbc.Select([
-                                    {"label": "15 min", "value": 15},
-                                    {"label": "30 min", "value": 30},
-                                    {"label": "60 min", "value": 60},
-                                    {"label": "120 min", "value": 120},
-                                ], value=60, id="timestep-select")
-                            ], width=6)
-                        ], className="mb-3"),
-                        
-                        # Control buttons
-                        dbc.ButtonGroup([
-                            dbc.Button("🚀 Initialize", id="init-btn", color="success"),
-                            dbc.Button("⏭️ Step", id="step-btn", color="primary", disabled=True),
-                            dbc.Button("▶️ Play", id="play-step-btn", color="success", disabled=True),
-                            dbc.Button("⏸️ Pause", id="pause-step-btn", color="warning", disabled=True),
-                            dbc.Button("🔄 Reset", id="reset-btn", color="secondary")
-                        ], className="w-100")
-                    ])
-                ], className="mb-3")
-            ], width=4)
-        ]),
-        
-        # Results section
-        html.Hr(),
-        html.Div(id="simulation-results-container"),
-        
-        # Event configuration modal
-        create_event_configuration_modal()
-    ]
+def toggle_interactive_area(network_loaded):
+    """Toggle visibility of the main interactive area."""
+    if network_loaded:
+        return {'display': 'block'}, {'display': 'none'}
+    return {'display': 'none'}, {'display': 'block'}
 
 # Update monitoring dropdowns when network loads
 @app.callback(
@@ -2719,17 +2723,6 @@ def update_batch_event_history(batch_events, applied_events, current_time):
 
 
 if __name__ == '__main__':
-    print("🚀 Starting Water Network Simulator with Simple Monitoring")
-    print("✅ Simple dropdowns now work immediately!")
-    print("📊 Clean charts update when you select elements")
-    print("🗑️ Easy add/remove functionality")
-    app.run(debug=True)
-
-
-
-
-
-if __name__ == "__main__":
     print("🚀 Starting Water Network Simulator with Simple Monitoring")
     print("✅ Simple dropdowns now work immediately!")
     print("📊 Clean charts update when you select elements")
