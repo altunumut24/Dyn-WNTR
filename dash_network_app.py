@@ -231,13 +231,6 @@ def create_layout():
             html.P("Interactive Network Simulator | Built with Dash & Plotly", 
                   className="text-center text-muted small")
         ]),
-        
-        # Hidden placeholders for interactive control buttons so Dash knows the ids at startup
-        html.Div([
-            html.Button(id="step-btn", style={"display": "none"}),
-            html.Button(id="play-step-btn", style={"display": "none"}),
-            html.Button(id="pause-step-btn", style={"display": "none"})
-        ], style={"display": "none"}),
     ], fluid=True, className="px-4 py-3")
 
 def create_network_file_selector():
