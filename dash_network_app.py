@@ -2034,7 +2034,8 @@ def control_batch_animation(play_clicks, pause_clicks, is_running):
         print("Pause button clicked - pausing animation")
         return False, True  # Pause animation
     
-    return is_running or False, not (is_running or False)
+    # Default: keep animation stopped and interval disabled
+    return False, True
 
 # Batch animation reset callback
 @app.callback(

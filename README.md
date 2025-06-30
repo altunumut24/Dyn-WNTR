@@ -328,3 +328,57 @@ For questions, suggestions, or collaborations, please open an issue or contact t
 4. Set the service to be a `web` service (defaults from Procfile).
 5. No extra environment variables are required—Railway injects `$PORT` which Dash/Gunicorn binds to.
 6. Deploy and open the generated URL to access the app.
+
+## 🧑‍💻 Local Development & Testing
+
+The repository is structured as a normal Dash + Gunicorn project – you don't need Docker to run it locally.
+
+1. Clone & create a fresh virtual-env (recommended):
+
+   ```bash
+   git clone https://github.com/<your-user>/dyn-wntr-sim.git
+   cd dyn-wntr-sim
+   python -m venv venv
+   source venv/bin/activate    # Windows ⇒ venv\Scripts\activate
+   ```
+
+2. Install Python dependencies:
+
+   ```bash
+   pip install --upgrade pip wheel
+   pip install -r requirements.txt
+   ```
+
+3. Launch the Dash development server (auto-reload):
+
+   ```bash
+   python dash_network_app.py     # http://127.0.0.1:8050
+   ```
+   *OR* run under Gunicorn exactly like production:
+
+   ```bash
+   gunicorn dash_network_app:app --bind 0.0.0.0:8080 --workers 1 --threads 1 --reload
+   ```
+   Visit `http://localhost:8080`.
+
+4. Optional developer tools:
+
+   * **Lint / formatting** – `pip install black flake8` then run `black . && flake8`.
+   * **Unit tests** – `pytest -q modules/tests`.
+   * **Hot-reloading CSS** – any files dropped in `assets/` are picked up automatically by Dash.
+
+5. Sample data / events
+
+   ```bash
+   # load default example network & events in the UI
+   ls generated_events*.json   # pre-made event schedules
+   ```
+
+6. Clearing state – all results are written to `results/` (git-ignored). Delete the directory to start fresh.
+
+7. Troubleshooting
+
+   • *Port already in use?*  Change the bind port: `gunicorn dash_network_app:app -b :9000`.
+   • *Large dataset zip*  is only required for the full benchmark tests – the app runs fine without extracting it.
+
+These steps mirror what happens in production, so if it works locally it will work on Fly/Render as well.

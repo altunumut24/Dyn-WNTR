@@ -24,4 +24,4 @@ COPY . .
 EXPOSE 8080
 
 # Start the Dash app with Gunicorn
-CMD ["gunicorn", "dash_network_app:app", "--bind", "0.0.0.0:8080"] 
+CMD ["gunicorn", "dash_network_app:app", "--bind", "0.0.0.0:8080", "--workers", "1", "--threads", "1"] 
