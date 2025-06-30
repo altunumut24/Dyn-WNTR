@@ -157,6 +157,7 @@ def create_stores():
         dcc.Store(id='applied-events', data=[]),
         dcc.Store(id='current-sim-time', data=0),
         dcc.Store(id='simulation-data', data=initialize_simulation_data()),
+        dcc.Store(id='event-notification-store', data=None),
         
         # Monitoring selections
         dcc.Store(id='pressure-monitoring-nodes', data=[]),
@@ -194,6 +195,14 @@ def create_layout():
     return dbc.Container([
         # Store components
         html.Div(create_stores()),
+        
+        # Toast container for notifications
+        html.Div(id="toast-container", style={
+            "position": "fixed",
+            "top": "2rem",
+            "right": "2rem",
+            "zIndex": 1050
+        }),
         
         # Hidden monitoring dropdowns for automatic selection
         html.Div([
@@ -1602,7 +1611,8 @@ def update_event_parameters(event_type, current_element):
 @app.callback(
     [Output('scheduled-events', 'data', allow_duplicate=True),
      Output('status-messages-area', 'children', allow_duplicate=True),
-     Output('event-config-modal', 'is_open', allow_duplicate=True)],
+     Output('event-config-modal', 'is_open', allow_duplicate=True),
+     Output('event-notification-store', 'data')],
     Input({'type': 'apply-event-btn', 'element': ALL}, 'n_clicks'),
     [State({'type': 'event-type-select', 'element': ALL}, 'value'),
      # All possible event parameters from our enhanced configuration
@@ -1629,7 +1639,7 @@ def handle_event_application(btn_clicks, event_types,
                            head_curve, current_element, scheduled_events):
     """Handle immediate event application from the event configuration form."""
     if not any(btn_clicks) or not current_element:
-        return scheduled_events or [], "", dash.no_update
+        return scheduled_events or [], dash.no_update, dash.no_update, dash.no_update
     
     try:
         # Find which button was clicked
@@ -1640,7 +1650,7 @@ def handle_event_application(btn_clicks, event_types,
                 break
         
         if triggered_idx is None or not event_types[triggered_idx]:
-            return scheduled_events or [], "", dash.no_update
+            return scheduled_events or [], dash.no_update, dash.no_update, dash.no_update
         
         # Collect parameters for this specific element/event
         parameters = {}
@@ -1681,6 +1691,7 @@ def handle_event_application(btn_clicks, event_types,
         )
         
         if event:
+            param_str = ", ".join([f"{k}={v}" for k, v in parameters.items()]) if parameters else "no parameters"
             # If simulation is running, apply immediately, otherwise add to scheduled events
             if global_state.get('sim') and global_state.get('sim_initialized'):
                 # Apply event immediately
@@ -1692,32 +1703,63 @@ def handle_event_application(btn_clicks, event_types,
                     # Add to applied events instead of scheduled
                     new_applied_events = global_state.get('applied_events', []) + [event]
                     global_state['applied_events'] = new_applied_events
-                    param_str = ", ".join([f"{k}={v}" for k, v in parameters.items()]) if parameters else "no parameters"
-                    success_msg = dbc.Alert(
-                        f"⚡ Applied {event['event_type']} to {event['element_name']} immediately! ({param_str})",
-                        color="success",
-                        dismissable=True
-                    )
-                    return scheduled_events or [], success_msg, False  # Close modal
+                    notification = {
+                        "title": "Event Applied",
+                        "message": f"Applied {event['event_type']} to {event['element_name']} immediately! ({param_str})",
+                        "status": "success"
+                    }
+                    return scheduled_events or [], dash.no_update, False, notification
                 else:
-                    error_msg = dbc.Alert(f"❌ Failed to apply event: {message}", color="danger")
-                    return scheduled_events or [], error_msg, dash.no_update
+                    notification = {
+                        "title": "Application Failed",
+                        "message": f"Failed to apply event: {message}",
+                        "status": "danger"
+                    }
+                    return scheduled_events or [], dash.no_update, dash.no_update, notification
             else:
                 # Add to scheduled events for later application
                 new_scheduled_events = (scheduled_events or []) + [event]
-                param_str = ", ".join([f"{k}={v}" for k, v in parameters.items()]) if parameters else "no parameters"
-                success_msg = dbc.Alert(
-                    f"✅ Event scheduled: {event['event_type']} on {event['element_name']} ({param_str})",
-                    color="success",
-                    dismissable=True
-                )
-                return new_scheduled_events, success_msg, False  # Close modal
+                notification = {
+                    "title": "Event Scheduled",
+                    "message": f"Event scheduled: {event['event_type']} on {event['element_name']} ({param_str})",
+                    "status": "success"
+                }
+                return new_scheduled_events, dash.no_update, False, notification
         
-        return scheduled_events or [], "", dash.no_update
+        return scheduled_events or [], dash.no_update, dash.no_update, dash.no_update
         
     except Exception as e:
-        error_msg = dbc.Alert(f"❌ Error scheduling event: {str(e)}", color="danger")
-        return scheduled_events or [], error_msg, dash.no_update
+        notification = {
+            "title": "Error",
+            "message": f"Error scheduling event: {str(e)}",
+            "status": "danger"
+        }
+        return scheduled_events or [], dash.no_update, dash.no_update, notification
+
+
+# Callback to display toasts for event notifications
+@app.callback(
+    Output('toast-container', 'children'),
+    Input('event-notification-store', 'data'),
+    prevent_initial_call=True
+)
+def show_event_notification(notification):
+    if not notification:
+        return dash.no_update
+    
+    message = notification.get('message', '')
+    title = notification.get('title', 'Notification')
+    status = notification.get('status', 'info') # success, danger, warning, info
+    
+    toast = dbc.Toast(
+        message,
+        header=title,
+        is_open=True,
+        dismissable=True,
+        duration=5000,
+        icon=status,
+    )
+    return toast
 
 # Update simulation status display with current time
 @app.callback(
