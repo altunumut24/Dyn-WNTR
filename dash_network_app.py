@@ -1953,6 +1953,13 @@ def display_batch_main_area(network_loaded, batch_events, batch_metadata):
                     dbc.CardBody([
                         html.Div(id="batch-event-timeline")
                     ])
+                ]),
+                # Event history list
+                dbc.Card([
+                    dbc.CardHeader(html.H5("🕑 Event History")),
+                    dbc.CardBody([
+                        html.Div(id="batch-event-history-container")
+                    ])
                 ])
             ], width=4),
             
@@ -2690,6 +2697,24 @@ def show_upload_selected(filename):
     if filename:
         return dbc.Alert(f"Selected file: {filename}. Click 'Load Uploaded Events' to import.", color="info")
     return ""
+
+# Batch event history callback
+@app.callback(
+    Output('batch-event-history-container', 'children'),
+    [Input('batch-events', 'data'),
+     Input('batch-applied-events', 'data'),
+     Input('batch-current-time', 'data')],
+    prevent_initial_call=True
+)
+def update_batch_event_history(batch_events, applied_events, current_time):
+    """Display event history for batch simulation."""
+    if not batch_events:
+        return dbc.Alert("No events loaded", color="info")
+    try:
+        from modules.dash_ui_components import create_professional_event_history
+        return create_professional_event_history(batch_events or [], applied_events or [], current_time or 0)
+    except Exception as e:
+        return dbc.Alert(f"Error displaying event history: {str(e)}", color="danger")
 
 
 if __name__ == '__main__':
