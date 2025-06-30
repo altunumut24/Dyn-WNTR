@@ -318,4 +318,13 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 **Built with ❤️ for water engineers and researchers worldwide**
 
-For questions, suggestions, or collaborations, please open an issue or contact the development team. 
+For questions, suggestions, or collaborations, please open an issue or contact the development team.
+
+## 🚀 Deploying to Railway
+
+1. Push the repository to GitHub.
+2. Create a new Railway project and link it to the repo.
+3. Railway detects the `Procfile` and Python environment automatically.
+4. Set the service to be a `web` service (defaults from Procfile).
+5. No extra environment variables are required—Railway injects `$PORT` which Dash/Gunicorn binds to.
+6. Deploy and open the generated URL to access the app.

@@ -19,3 +19,6 @@ rich>=10.14.0,<15.0.0
 # Build essentials
 setuptools>=65.0.0
 wheel>=0.37.0
+
+# Deployment
+gunicorn>=20.1.0
