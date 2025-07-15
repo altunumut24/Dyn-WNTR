@@ -466,7 +466,7 @@ def create_interactive_content():
                             dbc.Col([
                                 dbc.Label("Duration (hours)"),
                                 dbc.Input(id="duration-input", type="number", 
-                                        value=24, min=1, max=8760, step=1)
+                                        value=24, min=1, max=87600, step=1)
                             ], width=6),
                             dbc.Col([
                                 dbc.Label("Timestep (minutes)"),
@@ -950,7 +950,9 @@ def close_modal(close_clicks, cancel_clicks, is_open):
 # Simulation control callbacks - Initialize
 @app.callback(
     [Output('sim-initialized', 'data'),
-     Output('sim-status', 'children')],
+     Output('sim-status', 'children'),
+     Output('simulation-duration-hours', 'data'),
+     Output('simulation-timestep-minutes', 'data')],
     Input('init-btn', 'n_clicks'),
     [State('duration-input', 'value'),
      State('timestep-select', 'value'),
@@ -961,14 +963,30 @@ def close_modal(close_clicks, cancel_clicks, is_open):
 def handle_simulation_initialize(n_clicks, duration_hours, timestep_minutes, network_loaded, current_status):
     """Handle simulation initialize button."""
     if not n_clicks or not network_loaded or global_state['sim'] is None:
-        return current_status or False, dbc.Alert("🟡 No network loaded", color="warning")
+        return current_status or False, dbc.Alert("🟡 No network loaded", color="warning"), 24, 60
     
     try:
         sim = global_state['sim']
         
         # Initialize simulation
-        duration_seconds = (duration_hours or 24) * 3600
-        timestep_seconds = (timestep_minutes or 60) * 60
+        duration_hours = duration_hours or 24
+        timestep_minutes = timestep_minutes or 60
+        
+        # Validate duration before initialization
+        max_reasonable_hours = 87600  # 10 years
+        if duration_hours > max_reasonable_hours:
+            error_status = dbc.Alert(
+                [
+                    html.H6("⚠️ Duration Too Large", className="alert-heading"),
+                    html.P(f"Cannot initialize simulation with {duration_hours:,} hours."),
+                    html.P(f"Please enter a duration less than {max_reasonable_hours:,} hours (10 years).", className="mb-0")
+                ],
+                color="warning"
+            )
+            return False, error_status, 24, 60
+        
+        duration_seconds = duration_hours * 3600
+        timestep_seconds = timestep_minutes * 60
         
         sim.init_simulation(
             global_timestep=timestep_seconds,
@@ -976,11 +994,11 @@ def handle_simulation_initialize(n_clicks, duration_hours, timestep_minutes, net
         )
         
         status = dbc.Alert("🟢 Simulation Initialized Successfully!", color="success")
-        return True, status
+        return True, status, duration_hours, timestep_minutes
             
     except Exception as e:
         error_status = dbc.Alert(f"❌ Initialization Error: {str(e)}", color="danger")
-        return False, error_status
+        return False, error_status, 24, 60
 
 # Simulation control callbacks - Reset
 @app.callback(
@@ -1139,14 +1157,50 @@ def control_auto_stepping(play_clicks, pause_clicks, interval_disabled):
     # no change
     return interval_disabled, dash.no_update, dash.no_update
 
+# Duration input validation callback
+@app.callback(
+    [Output('duration-input', 'value'),
+     Output('status-messages-area', 'children', allow_duplicate=True)],
+    Input('duration-input', 'value'),
+    prevent_initial_call=True
+)
+def validate_duration_input(duration_value):
+    """Validate duration input and enforce maximum limit."""
+    if duration_value is None:
+        return 24, dash.no_update  # Default value
+    
+    max_hours = 87600  # 10 years
+    
+    # If user enters more than max, reset to max value
+    if duration_value > max_hours:
+        warning_msg = dbc.Alert(
+            f"⚠️ Duration capped at maximum: {max_hours:,} hours (10 years)",
+            color="warning",
+            dismissable=True,
+            duration=4000
+        )
+        return max_hours, warning_msg
+    
+    # If user enters less than min, reset to min value  
+    if duration_value < 1:
+        warning_msg = dbc.Alert(
+            "⚠️ Duration set to minimum: 1 hour",
+            color="warning", 
+            dismissable=True,
+            duration=4000
+        )
+        return 1, warning_msg
+        
+    return duration_value, dash.no_update
+
 # Simulation progress display callback
 @app.callback(
     Output('simulation-progress-display', 'children'),
     [Input('sim-initialized', 'data'),
      Input('current-sim-time', 'data'),
-     Input('simulation-data', 'data')],
-    [State('duration-input', 'value'),
-     State('timestep-select', 'value')],
+     Input('simulation-data', 'data'),
+     Input('simulation-duration-hours', 'data'),
+     Input('simulation-timestep-minutes', 'data')],
     prevent_initial_call=True
 )
 def update_simulation_progress(sim_initialized, current_time, sim_data, duration_hours, timestep_minutes):
@@ -1157,22 +1211,48 @@ def update_simulation_progress(sim_initialized, current_time, sim_data, duration
     try:
         import datetime
         
-        # Calculate simulation parameters
+        # Calculate simulation parameters using stored values from initialization
         total_duration_seconds = (duration_hours or 24) * 3600
         timestep_seconds = (timestep_minutes or 60) * 60
         current_time = current_time or 0
+        
+        # Check if duration exceeds datetime.timedelta limits
+        # timedelta max value is about 999,999,999 days (around 2.7 million years)
+        # But practically, let's limit to something reasonable like 10 years
+        max_reasonable_seconds = 10 * 365 * 24 * 3600  # 10 years
+        
+        if total_duration_seconds > max_reasonable_seconds:
+            return dbc.Alert(
+                [
+                    html.H6("⚠️ Duration Too Large", className="alert-heading"),
+                    html.P(f"The entered duration ({duration_hours:,} hours) exceeds reasonable limits."),
+                    html.P("Please enter a duration less than 87,600 hours (10 years)."),
+                    html.P("For very long simulations, consider using batch mode with shorter time segments.", className="mb-0")
+                ],
+                color="warning"
+            )
+        
+        # Try to create timedelta objects to ensure they're valid
+        try:
+            total_time_display = str(datetime.timedelta(seconds=int(total_duration_seconds)))
+            current_time_display = str(datetime.timedelta(seconds=int(current_time)))
+            remaining_time = max(0, total_duration_seconds - current_time)
+            remaining_time_display = str(datetime.timedelta(seconds=int(remaining_time)))
+        except (ValueError, OverflowError):
+            return dbc.Alert(
+                [
+                    html.H6("⚠️ Duration Invalid", className="alert-heading"),
+                    html.P("The entered duration cannot be processed by the system."),
+                    html.P("Please enter a smaller duration value.", className="mb-0")
+                ],
+                color="danger"
+            )
         
         # Calculate progress
         time_progress = min(current_time / total_duration_seconds, 1.0)
         completed_steps = len((sim_data or {}).get('time', []))
         planned_total_steps = int(total_duration_seconds / timestep_seconds)
         step_progress = min(completed_steps / planned_total_steps, 1.0) if planned_total_steps > 0 else 0
-        
-        # Time displays
-        current_time_display = str(datetime.timedelta(seconds=int(current_time)))
-        total_time_display = str(datetime.timedelta(seconds=int(total_duration_seconds)))
-        remaining_time = max(0, total_duration_seconds - current_time)
-        remaining_time_display = str(datetime.timedelta(seconds=int(remaining_time)))
         
         # Progress components
         progress_components = [
