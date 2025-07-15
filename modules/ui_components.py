@@ -178,9 +178,27 @@ def display_element_properties(wn: WaterNetworkModel, element_name: str, element
             coords = element.coordinates
             st.write(f"- **Coordinates:** ({coords[0]:.2f}, {coords[1]:.2f})")
             
-            # Show node-specific properties
-            if hasattr(element, 'base_demand'):
-                st.write(f"- **Base Demand:** {element.base_demand:.4f} m³/s")
+            # Show total current demand instead of just base demand
+            if hasattr(element, 'demand_timeseries_list'):
+                try:
+                    current_time = wn.sim_time if hasattr(wn, 'sim_time') else 0
+                    total_demand = element.demand_timeseries_list.at(current_time)
+                    st.write(f"- **Total Current Demand:** {total_demand:.4f} m³/s")
+                    
+                    # Also show breakdown if multiple demand entries exist
+                    if len(element.demand_timeseries_list) > 1:
+                        st.write(f"- **Demand Entries:** {len(element.demand_timeseries_list)} total")
+                        # Show first few entries
+                        for i, demand_entry in enumerate(element.demand_timeseries_list._list[:3]):
+                            category = demand_entry.category or "base"
+                            st.write(f"  • {category}: {demand_entry.base_value:.4f} m³/s")
+                        if len(element.demand_timeseries_list) > 3:
+                            st.write(f"  • ... and {len(element.demand_timeseries_list) - 3} more")
+                except:
+                    # Fallback to base demand if calculation fails
+                    if hasattr(element, 'base_demand'):
+                        st.write(f"- **Base Demand:** {element.base_demand:.4f} m³/s")
+                        
             if hasattr(element, 'elevation'):
                 st.write(f"- **Elevation:** {element.elevation:.2f} m")
             if hasattr(element, 'pressure') and element.pressure is not None:

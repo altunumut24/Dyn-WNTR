@@ -64,8 +64,30 @@ def create_element_properties_display(wn: WaterNetworkModel, element_name: str, 
                 html.P(f"Elevation: {getattr(element, 'elevation', 0):.2f} m")
             ])
             
-            if hasattr(element, 'base_demand'):
-                properties.append(html.P(f"Base Demand: {element.base_demand:.4f} m³/s"))
+            # Show total current demand instead of just base demand
+            if hasattr(element, 'demand_timeseries_list'):
+                # Calculate total demand at current simulation time
+                try:
+                    current_time = wn.sim_time if hasattr(wn, 'sim_time') else 0
+                    total_demand = element.demand_timeseries_list.at(current_time)
+                    properties.append(html.P(f"Total Current Demand: {total_demand:.4f} m³/s"))
+                    
+                    # Also show breakdown if multiple demand entries exist
+                    if len(element.demand_timeseries_list) > 1:
+                        properties.append(html.P(f"Demand Entries: {len(element.demand_timeseries_list)} total"))
+                        # Show first few entries
+                        for i, demand_entry in enumerate(element.demand_timeseries_list._list[:3]):
+                            category = demand_entry.category or "base"
+                            properties.append(html.P(f"  • {category}: {demand_entry.base_value:.4f} m³/s", 
+                                                   style={"margin-left": "20px", "font-size": "0.9em"}))
+                        if len(element.demand_timeseries_list) > 3:
+                            properties.append(html.P(f"  • ... and {len(element.demand_timeseries_list) - 3} more", 
+                                                   style={"margin-left": "20px", "font-size": "0.9em", "color": "gray"}))
+                except:
+                    # Fallback to base demand if calculation fails
+                    if hasattr(element, 'base_demand'):
+                        properties.append(html.P(f"Base Demand: {element.base_demand:.4f} m³/s"))
+                        
             if hasattr(element, 'pressure') and element.pressure is not None:
                 properties.append(html.P(f"Current Pressure: {element.pressure:.2f} m"))
         else:
