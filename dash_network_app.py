@@ -466,7 +466,7 @@ def create_interactive_content():
                             dbc.Col([
                                 dbc.Label("Duration (hours)"),
                                 dbc.Input(id="duration-input", type="number", 
-                                        value=24, min=1, max=168, step=1)
+                                        value=24, min=1, max=8760, step=1)
                             ], width=6),
                             dbc.Col([
                                 dbc.Label("Timestep (minutes)"),
