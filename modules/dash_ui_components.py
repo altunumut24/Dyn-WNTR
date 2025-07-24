@@ -90,6 +90,8 @@ def create_element_properties_display(wn: WaterNetworkModel, element_name: str, 
                         
             if hasattr(element, 'pressure') and element.pressure is not None:
                 properties.append(html.P(f"Current Pressure: {element.pressure:.2f} m"))
+            if hasattr(element, 'leak_demand') and element.leak_demand is not None:
+                properties.append(html.P(f"Current Water Leakage: {element.leak_demand:.2f} m³/s"))
         else:
             element = wn.get_link(element_name)
             properties.extend([
@@ -636,7 +638,7 @@ def create_event_configuration_modal() -> dbc.Modal:
     return dbc.Modal([
         dbc.ModalHeader([
             dbc.ModalTitle("⚡ Configure Event", id="modal-title"),
-            dbc.Button("×", id="close-event-modal", className="btn-close", n_clicks=0)
+            #dbc.Button("×", id="close-event-modal", className="btn-close", n_clicks=0)
         ]),
         dbc.ModalBody([
             html.Div(id="modal-element-info"),

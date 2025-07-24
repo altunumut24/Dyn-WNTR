@@ -31,6 +31,9 @@ import json
 import uuid
 import os
 import tempfile
+import base64
+import copy
+import numpy as np
 from typing import Dict, Any, List, Optional
 import pandas as pd
 
@@ -259,7 +262,8 @@ def create_network_file_selector():
                 dbc.Select([
                     {"label": "NET_2.inp - Large Distribution Network", "value": "NET_2.inp"},
                     {"label": "NET_3.inp - Medium Distribution Network", "value": "NET_3.inp"},
-                    {"label": "NET_4.inp - Sample Distribution Network", "value": "NET_4.inp"}
+                    {"label": "NET_4.inp - Sample Distribution Network", "value": "NET_4.inp"},
+                    {"label": "GRID.inp - Custom Grid Network", "value": "custom_wdn.inp"}
                 ], value="NET_4.inp", id="example-network-select")
             ], id="example-networks-div"),
             
@@ -583,6 +587,21 @@ def toggle_file_source(source):
     else:
         return {"display": "none"}, {"display": "block"}
 
+# Upload status callback - provides immediate feedback when file is selected
+@app.callback(
+    Output('upload-status', 'children'),
+    Input('upload-network-file', 'filename'),
+    prevent_initial_call=True
+)
+def show_upload_status(filename):
+    """Show upload status when file is selected."""
+    if filename:
+        return dbc.Alert([
+            html.I(className="fas fa-file-check me-2"),
+            f"📁 Selected: {filename}"
+        ], color="info", className="mt-2")
+    return ""
+
 # Removed: Batch file source radio callback (no longer needed for simplified batch mode)
 
 # Callback for loading network
@@ -619,9 +638,6 @@ def load_network_callback(n_clicks, source, example_file, upload_contents, uploa
         elif source == "upload" and upload_contents and upload_filename:
             # Load from uploaded file
             try:
-                import base64
-                import tempfile
-                
                 # Decode the uploaded file
                 content_type, content_string = upload_contents.split(',')
                 decoded = base64.b64decode(content_string)
@@ -634,6 +650,7 @@ def load_network_callback(n_clicks, source, example_file, upload_contents, uploa
                 # Load the network model from temporary file
                 wn = load_network_model(temp_path)
                 file_display_name = upload_filename
+                file_path = upload_filename  # Use uploaded filename, not temp path
                 
                 # Clean up temporary file
                 if os.path.exists(temp_path):
@@ -650,10 +667,12 @@ def load_network_callback(n_clicks, source, example_file, upload_contents, uploa
         
         if wn:
             # Store network in global state
+
+            wn.add_pattern('gauss_pattern', [1.0, 0.5, 2.0, 0.0, 0.0, 0.0, 0.0, 1.5, 1.0, 0.5, 1.0, 2.0, 0.0, 0.0, 0.0, 0.0])
+
             global_state['wn'] = wn
             
             # Keep an untouched copy of the original network for reset purposes
-            import copy
             global_state['original_wn'] = copy.deepcopy(wn)
             global_state['network_file_path'] = file_path
             
@@ -936,7 +955,8 @@ def update_modal_content(current_element, network_loaded):
 # Modal close callback
 @app.callback(
     Output('event-config-modal', 'is_open', allow_duplicate=True),
-    [Input('close-event-modal', 'n_clicks'),
+    [
+     Input('close-event-modal', 'n_clicks'),
      Input('cancel-event-btn', 'n_clicks')],
     State('event-config-modal', 'is_open'),
     prevent_initial_call=True
@@ -969,8 +989,8 @@ def handle_simulation_initialize(n_clicks, duration_hours, timestep_minutes, net
         sim = global_state['sim']
         
         # Initialize simulation
-        duration_hours = duration_hours or 24
-        timestep_minutes = timestep_minutes or 60
+        duration_hours = int(duration_hours or 24)
+        timestep_minutes = int(timestep_minutes or 60)
         
         # Validate duration before initialization
         max_reasonable_hours = 87600  # 10 years
@@ -988,6 +1008,8 @@ def handle_simulation_initialize(n_clicks, duration_hours, timestep_minutes, net
         duration_seconds = duration_hours * 3600
         timestep_seconds = timestep_minutes * 60
         
+        print(f"Initializing simulation for {duration_seconds} hours with {timestep_seconds} minutes timestep.")
+        
         sim.init_simulation(
             global_timestep=timestep_seconds,
             duration=duration_seconds
@@ -998,6 +1020,8 @@ def handle_simulation_initialize(n_clicks, duration_hours, timestep_minutes, net
             
     except Exception as e:
         error_status = dbc.Alert(f"❌ Initialization Error: {str(e)}", color="danger")
+        print(f"Initialization error: {e}")
+        print(duration_hours, timestep_minutes)
         return False, error_status, 24, 60
 
 # Simulation control callbacks - Reset
@@ -2842,5 +2866,5 @@ if __name__ == '__main__':
     print("✅ Simple dropdowns now work immediately!")
     print("📊 Clean charts update when you select elements")
     print("🗑️ Easy add/remove functionality")
-    app.run(debug=True)
+    app.run(debug=True, host="0.0.0.0")
         

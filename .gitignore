@@ -25,3 +25,9 @@ __pycache__/
 # Virtual environments
 venv_new/
 .env
+bin
+etc
+lib
+lib64
+share
+include
