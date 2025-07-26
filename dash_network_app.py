@@ -189,6 +189,9 @@ def create_stores():
             n_intervals=0,
             disabled=False
         ),
+        
+        # Label visibility control
+        dcc.Store(id='show-labels-always', data=True),
     ]
 
 # Batch layout removed - to be implemented from scratch
@@ -430,7 +433,7 @@ def create_interactive_content():
                                     {"label": "900px", "value": 900},
                                     {"label": "1000px", "value": 1000}
                                 ], value=800, id="map-height-select")
-                            ], width=4),
+                            ], width=3),
                             dbc.Col([
                                 dbc.Label("Node Size"),
                                 dbc.Select([
@@ -439,10 +442,17 @@ def create_interactive_content():
                                     {"label": "100%", "value": 1.0},
                                     {"label": "120%", "value": 1.2}
                                 ], value=1.0, id="node-size-select")
-                            ], width=4),
+                            ], width=3),
+                            dbc.Col([
+                                dbc.Label("Labels"),
+                                dbc.ButtonGroup([
+                                    dbc.Button("Always", id="labels-always-btn", color="primary", size="sm"),
+                                    dbc.Button("Hover", id="labels-hover-btn", color="outline-primary", size="sm")
+                                ], className="w-100")
+                            ], width=3),
                             dbc.Col([
                                 dbc.Button("🧭 Legend", id="legend-btn", color="info", size="sm")
-                            ], width=4)
+                            ], width=3)
                         ])
                     ])
                 ], className="mb-3"),
@@ -586,6 +596,60 @@ def toggle_file_source(source):
         return {"display": "block"}, {"display": "none"}
     else:
         return {"display": "none"}, {"display": "block"}
+
+# Label visibility toggle callback (Interactive mode)
+@app.callback(
+    [Output('show-labels-always', 'data'),
+     Output('labels-always-btn', 'color'),
+     Output('labels-hover-btn', 'color')],
+    [Input('labels-always-btn', 'n_clicks'),
+     Input('labels-hover-btn', 'n_clicks')],
+    State('show-labels-always', 'data'),
+    prevent_initial_call=True
+)
+def toggle_label_visibility(always_clicks, hover_clicks, current_state):
+    """Toggle between always showing labels and showing on hover only."""
+    ctx_triggered = ctx.triggered_id if hasattr(ctx, "triggered_id") else None
+    
+    if ctx_triggered == 'labels-always-btn':
+        # Always on mode
+        return True, "primary", "outline-primary"
+    elif ctx_triggered == 'labels-hover-btn':
+        # Hover only mode
+        return False, "outline-primary", "primary"
+    
+    # Default state - return current with appropriate button colors
+    if current_state:
+        return True, "primary", "outline-primary"
+    else:
+        return False, "outline-primary", "primary"
+
+# Label visibility toggle callback (Batch mode)
+@app.callback(
+    [Output('show-labels-always', 'data', allow_duplicate=True),
+     Output('batch-labels-always-btn', 'color'),
+     Output('batch-labels-hover-btn', 'color')],
+    [Input('batch-labels-always-btn', 'n_clicks'),
+     Input('batch-labels-hover-btn', 'n_clicks')],
+    State('show-labels-always', 'data'),
+    prevent_initial_call=True
+)
+def toggle_batch_label_visibility(always_clicks, hover_clicks, current_state):
+    """Toggle between always showing labels and showing on hover only in batch mode."""
+    ctx_triggered = ctx.triggered_id if hasattr(ctx, "triggered_id") else None
+    
+    if ctx_triggered == 'batch-labels-always-btn':
+        # Always on mode
+        return True, "primary", "outline-primary"
+    elif ctx_triggered == 'batch-labels-hover-btn':
+        # Hover only mode
+        return False, "outline-primary", "primary"
+    
+    # Default state - return current with appropriate button colors
+    if current_state:
+        return True, "primary", "outline-primary"
+    else:
+        return False, "outline-primary", "primary"
 
 # Upload status callback - provides immediate feedback when file is selected
 @app.callback(
@@ -818,11 +882,12 @@ def ensure_monitoring_on_init(sim_initialized, current_nodes, current_links, met
      Input('selected-links', 'data'),
      Input('sim-initialized', 'data'),
      Input('simulation-data', 'data'),
-     Input('current-sim-time', 'data')],
+     Input('current-sim-time', 'data'),
+     Input('show-labels-always', 'data')],
     prevent_initial_call=True
 )
 def update_network_map(network_loaded, map_height, node_size, 
-                      selected_nodes, selected_links, sim_initialized, simulation_data, current_time):
+                      selected_nodes, selected_links, sim_initialized, simulation_data, current_time, show_labels_always):
     """Update the network map visualization."""
     try:
         if not network_loaded or global_state['wn'] is None:
@@ -842,7 +907,8 @@ def update_network_map(network_loaded, map_height, node_size,
             show_simulation_data=show_sim_data,
             sim_initialized=sim_initialized or False,
             height=map_height_int,
-            node_size_scale=node_size_float
+            node_size_scale=node_size_float,
+            show_labels_always=show_labels_always
         )
         
         map_component = dcc.Graph(id="network-graph", figure=fig)
@@ -2121,7 +2187,7 @@ def display_batch_main_area(network_loaded, batch_events, batch_metadata):
                                     {"label": "700px", "value": 700},
                                     {"label": "800px", "value": 800}
                                 ], value=700, id="batch-map-height-select")
-                            ], width=6),
+                            ], width=4),
                             dbc.Col([
                                 dbc.Label("Node Size"),
                                 dbc.Select([
@@ -2129,7 +2195,14 @@ def display_batch_main_area(network_loaded, batch_events, batch_metadata):
                                     {"label": "100%", "value": 1.0},
                                     {"label": "120%", "value": 1.2}
                                 ], value=1.0, id="batch-node-size-select")
-                            ], width=6)
+                            ], width=4),
+                            dbc.Col([
+                                dbc.Label("Labels"),
+                                dbc.ButtonGroup([
+                                    dbc.Button("Always", id="batch-labels-always-btn", color="primary", size="sm"),
+                                    dbc.Button("Hover", id="batch-labels-hover-btn", color="outline-primary", size="sm")
+                                ], className="w-100")
+                            ], width=4)
                         ])
                     ])
                 ], className="mb-3"),
@@ -2477,10 +2550,11 @@ def update_batch_event_timeline(batch_events, current_time, applied_events):
      Input('batch-map-height-select', 'value'),
      Input('batch-node-size-select', 'value'),
      Input('batch-current-time', 'data'),
-     Input('batch-simulation-data', 'data')],
+     Input('batch-simulation-data', 'data'),
+     Input('show-labels-always', 'data')],
     prevent_initial_call=True
 )
-def update_batch_network_map(network_loaded, map_height, node_size, current_time, simulation_data):
+def update_batch_network_map(network_loaded, map_height, node_size, current_time, simulation_data, show_labels_always):
     """Update batch simulation network map."""
     try:
         if not network_loaded or global_state['wn'] is None:
@@ -2499,7 +2573,8 @@ def update_batch_network_map(network_loaded, map_height, node_size, current_time
             show_simulation_data=True,
             sim_initialized=True,
             height=map_height_int,
-            node_size_scale=node_size_float
+            node_size_scale=node_size_float,
+            show_labels_always=show_labels_always
         )
         
         map_component = dcc.Graph(id="batch-network-graph", figure=fig)

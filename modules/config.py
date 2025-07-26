@@ -171,22 +171,23 @@ DEFAULT_MONITORED_LINKS_COUNT = 5
 # Colors are defined as RGB values (Red, Green, Blue) from 0-255
 
 # Colors for pressure visualization (nodes)
-# Low pressure = purple/dark, High pressure = yellow/bright
+# Low pressure = grey (concerning), High pressure = red (critical/high)
 PRESSURE_COLOR_RANGES = {
-    'low': {'r': 68, 'g': 1, 'b': 84},          # Dark purple - concerning low pressure
-    'medium_low': {'r': 59, 'g': 82, 'b': 139}, # Blue - below normal pressure  
-    'medium': {'r': 33, 'g': 145, 'b': 140},    # Teal - normal pressure
-    'medium_high': {'r': 94, 'g': 201, 'b': 98}, # Green - good pressure
-    'high': {'r': 253, 'g': 231, 'b': 37}       # Yellow - high pressure
+    'low': {'r': 128, 'g': 128, 'b': 128},          # Grey - low pressure (concerning)
+    'medium_low': {'r': 160, 'g': 120, 'b': 120},   # Light grey-red - below normal pressure  
+    'medium': {'r': 192, 'g': 96, 'b': 96},         # Medium red - normal pressure
+    'medium_high': {'r': 224, 'g': 64, 'b': 64},    # Red - good pressure
+    'high': {'r': 255, 'g': 32, 'b': 32}            # Bright red - high pressure
 }
 
 # Colors for flow visualization (links/pipes)
-# Different colors help identify flow direction and magnitude
+# No flow = grey, Maximum flow = dark blue
 FLOW_COLOR_RANGES = {
-    'reverse': {'r': 68, 'g': 1, 'b': 84},      # Purple - reverse flow (unusual)
-    'low': {'r': 33, 'g': 145, 'b': 140},       # Teal - low flow
-    'medium': {'r': 94, 'g': 201, 'b': 98},     # Green - normal flow
-    'high': {'r': 253, 'g': 231, 'b': 37}       # Yellow - high flow
+    'no_flow': {'r': 128, 'g': 128, 'b': 128},      # Grey - no flow
+    'low': {'r': 96, 'g': 96, 'b': 160},            # Light blue-grey - low flow
+    'medium': {'r': 64, 'g': 64, 'b': 192},         # Medium blue - normal flow
+    'high': {'r': 32, 'g': 32, 'b': 224},           # Blue - high flow
+    'maximum': {'r': 0, 'g': 0, 'b': 128}           # Dark blue - maximum flow
 }
 
 # =============================================================================
