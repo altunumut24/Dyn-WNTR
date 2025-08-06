@@ -112,11 +112,11 @@ def get_network_layout(wn: WaterNetworkModel):
 
 def get_pressure_color(pressure, min_pressure, max_pressure):
     """
-    Generate color based on pressure value using viridis-like color mapping.
+    Generate color based on pressure value using grey-to-red color mapping.
     
     This function maps pressure values to colors for node visualization.
-    Higher pressures get "warmer" colors (yellow), lower pressures get
-    "cooler" colors (purple/blue).
+    Higher pressures get red colors, lower pressures get grey colors.
+    Enhanced for realistic water network pressure ranges (typically 20-50m).
     
     Args:
         pressure (float): The pressure value to map
@@ -124,104 +124,109 @@ def get_pressure_color(pressure, min_pressure, max_pressure):
         max_pressure (float): Maximum pressure in the dataset
         
     Returns:
-        str: RGB color string (e.g., 'rgb(253, 231, 37)')
+        str: RGB color string (e.g., 'rgb(255, 32, 32)')
         
     Color mapping:
-    - Yellow = high pressure (good), Purple = low pressure (concerning)
-    - The color scale helps identify pressure problems visually
-    - Uses viridis color scheme which is colorblind-friendly
+        - Grey = low pressure (concerning)
+        - Red = high pressure (good/high flow capacity)
+        - Enhanced sensitivity for narrow pressure ranges
     """
     # Handle edge case where all pressures are the same
     if max_pressure == min_pressure:
-        return 'rgb(253, 231, 37)'  # Default yellow
+        return 'rgb(192, 96, 96)'  # Default medium red
     
-    # Normalize pressure to 0-1 range
-    normalized = (pressure - min_pressure) / (max_pressure - min_pressure)
-    normalized = max(0, min(1, normalized))  # Clamp to valid range
-    
-    # Viridis-like color mapping: yellow → green → blue → purple
-    # This creates a smooth color transition across pressure ranges
-    
-    if normalized < 0.25:
-        # Yellow to green transition (high to medium-high pressure)
-        t = normalized * 4  # Scale to 0-1 within this segment
-        r = int(253 - (253 - 68) * t)   # Red: 253 → 68
-        g = int(231 - (231 - 1) * t)    # Green: 231 → 1
-        b = int(37 + (84 - 37) * t)     # Blue: 37 → 84
-        
-    elif normalized < 0.5:
-        # Green to teal transition (medium-high to medium pressure)
-        t = (normalized - 0.25) * 4
-        r = int(68 - (68 - 33) * t)     # Red: 68 → 33
-        g = int(1 + (144 - 1) * t)      # Green: 1 → 144
-        b = int(84 + (140 - 84) * t)    # Blue: 84 → 140
-        
-    elif normalized < 0.75:
-        # Teal to blue transition (medium to medium-low pressure)
-        t = (normalized - 0.5) * 4
-        r = int(33 - (33 - 59) * t)     # Red: 33 → 59
-        g = int(144 - (144 - 82) * t)   # Green: 144 → 82
-        b = int(140 + (139 - 140) * t)  # Blue: 140 → 139
-        
+    # For very narrow pressure ranges (< 5m difference), enhance sensitivity
+    pressure_range = max_pressure - min_pressure
+    if pressure_range < 5.0:
+        # Use non-linear scaling to amplify small differences
+        normalized = (pressure - min_pressure) / pressure_range
+        normalized = max(0, min(1, normalized))
+        # Apply power function to enhance contrast for small ranges
+        normalized = normalized ** 0.7  # Makes differences more visible
     else:
-        # Blue to purple transition (medium-low to low pressure)
-        t = (normalized - 0.75) * 4
-        r = int(59 + (68 - 59) * t)     # Red: 59 → 68
-        g = int(82 - (82 - 1) * t)      # Green: 82 → 1
-        b = int(139 + (84 - 139) * t)   # Blue: 139 → 84
+        # Standard linear scaling for larger ranges
+        normalized = (pressure - min_pressure) / (max_pressure - min_pressure)
+        normalized = max(0, min(1, normalized))
+    
+    # Enhanced color gradient for better contrast
+    # Low pressure = Dark Grey, High pressure = Bright Red
+    start_r, start_g, start_b = 100, 100, 100  # Darker grey for better contrast
+    end_r, end_g, end_b = 220, 20, 20          # Slightly less saturated red
+    
+    r = int(start_r + (end_r - start_r) * normalized)
+    g = int(start_g + (end_g - start_g) * normalized)  
+    b = int(start_b + (end_b - start_b) * normalized)
     
     return f'rgb({r}, {g}, {b})'
 
 
 def get_flow_color_and_width(flow, min_flow, max_flow):
-    """Generate color and width based on flow value using viridis-like colors."""
+    """
+    Generate color and width based on flow value using grey-to-dark-blue color mapping.
+    
+    This function maps flow values to colors and line widths for pipe visualization.
+    Enhanced for realistic water network flow ranges (typically 0.001-0.1 m³/s).
+    Higher flows get darker blue colors and thicker lines, zero/low flows get grey.
+    
+    Args:
+        flow (float): The flow value to map
+        min_flow (float): Minimum flow in the dataset  
+        max_flow (float): Maximum flow in the dataset
+        
+    Returns:
+        Tuple[str, float]: (RGB color string, line width)
+        
+    Color mapping:
+        - Grey = no/low flow
+        - Dark Blue = maximum flow
+        - Enhanced sensitivity for small flow values
+        - Negative flows get a slight red tint to indicate reverse direction
+    """
     abs_flow = abs(flow)
     max_abs_flow = max(abs(min_flow), abs(max_flow))
     
     if max_abs_flow == 0:
-        return 'rgb(253, 231, 37)', 2  # Default yellow
+        return 'rgb(128, 128, 128)', 2  # Default grey for no flow
     
-    # Width based on flow magnitude
-    width = 2 + 8 * (abs_flow / max_abs_flow)
-    
-    # Use viridis-like color mapping for flow intensity
-    intensity = abs_flow / max_abs_flow
-    
-    # Apply the same viridis color scheme as pressure
-    if intensity < 0.25:
-        # Yellow to green
-        t = intensity * 4
-        r = int(253 - (253 - 68) * t)
-        g = int(231 - (231 - 1) * t)
-        b = int(37 + (84 - 37) * t)
-    elif intensity < 0.5:
-        # Green to teal
-        t = (intensity - 0.25) * 4
-        r = int(68 - (68 - 33) * t)
-        g = int(1 + (144 - 1) * t)
-        b = int(84 + (140 - 84) * t)
-    elif intensity < 0.75:
-        # Teal to blue
-        t = (intensity - 0.5) * 4
-        r = int(33 - (33 - 59) * t)
-        g = int(144 - (144 - 82) * t)
-        b = int(140 + (139 - 140) * t)
+    # Enhanced scaling for small flow values (< 0.01 m³/s)
+    if max_abs_flow < 0.01:
+        # Use logarithmic scaling for very small flows to enhance visibility
+        if abs_flow > 0:
+            # Log scale for small values (shift to avoid log(0))
+            log_flow = np.log10(abs_flow + max_abs_flow * 0.001)
+            log_max = np.log10(max_abs_flow + max_abs_flow * 0.001)
+            log_min = np.log10(max_abs_flow * 0.001)
+            intensity = (log_flow - log_min) / (log_max - log_min)
+        else:
+            intensity = 0
     else:
-        # Blue to purple
-        t = (intensity - 0.75) * 4
-        r = int(59 + (68 - 59) * t)
-        g = int(82 - (82 - 1) * t)
-        b = int(139 + (84 - 139) * t)
+        # Standard linear scaling for larger flows
+        intensity = abs_flow / max_abs_flow
     
-    # For negative flows, add a slight red tint to distinguish direction
+    intensity = max(0, min(1, intensity))  # Clamp to valid range
+    
+    # Enhanced width range for better visibility (3-12 pixel range)
+    width = 3 + 9 * intensity
+    
+    # Enhanced color gradient with better contrast
+    # No flow = Light Grey, Max flow = Deep Blue
+    start_r, start_g, start_b = 140, 140, 140  # Lighter grey for better contrast
+    end_r, end_g, end_b = 0, 20, 160          # Deeper blue for better visibility
+    
+    r = int(start_r + (end_r - start_r) * intensity)
+    g = int(start_g + (end_g - start_g) * intensity)
+    b = int(start_b + (end_b - start_b) * intensity)
+    
+    # For negative flows (reverse direction), add a slight red tint
     if flow < 0:
-        r = min(255, r + 30)  # Add red component for reverse flow
+        r = min(255, r + 50)  # Enhanced red tint for reverse flow indication
     
     return f'rgb({r}, {g}, {b})', width
 
 
 def create_network_plot(wn: WaterNetworkModel, selected_nodes: List[str] = None, selected_links: List[str] = None, 
-                        show_simulation_data: bool = False, sim_initialized: bool = False, height: int = 900, node_size_scale: float = 1.0):
+                        show_simulation_data: bool = False, sim_initialized: bool = False, height: int = 900, 
+                        node_size_scale: float = 1.0, show_labels_always: bool = True):
     """Create interactive plotly network visualization with click handling and optional simulation data overlay."""
     node_positions, edge_list, node_info, edge_info = get_network_layout(wn)
     
@@ -358,45 +363,66 @@ def create_network_plot(wn: WaterNetworkModel, selected_nodes: List[str] = None,
         
         link_colors.append(color)
     
-    # Add white text shadow for link labels (larger for better visibility)
-    fig.add_trace(go.Scatter(
-        x=link_x,
-        y=link_y,
-        mode='text',
-        text=link_names,
-        textfont=dict(
-            size=14,  # Increased from 10 to 14
-            color='white',
-            family="Arial Black"  # Bold font for shadow
-        ),
-        showlegend=False,
-        hoverinfo='skip'
-    ))
-    
-    # Add main link markers and text
-    fig.add_trace(go.Scatter(
-        x=link_x,
-        y=link_y,
-        mode='markers+text',
-        marker=dict(
-            size=8,   # Reduced marker size to 8 to make text more prominent
-            color=link_colors,
-            line=dict(width=1, color='#34495e'),  # Thinner border
-            symbol=link_symbols,
-            opacity=0.6  # More transparent markers
-        ),
-        text=link_names,
-        textfont=dict(
-            size=12,  # Increased from 9 to 12
-            color='#1a252f',  # Darker color for better contrast
-            family="Arial Black"  # Bold font for main text
-        ),
-        customdata=link_customdata,
-        hovertemplate='%{hovertext}<extra></extra>',
-        hovertext=link_hover_text,
-        name='Links (clickable)',
-        showlegend=False
-    ))
+    # Add link text (conditionally based on show_labels_always setting)
+    if show_labels_always:
+        # Add white text shadow for link labels (larger for better visibility)
+        fig.add_trace(go.Scatter(
+            x=link_x,
+            y=link_y,
+            mode='text',
+            text=link_names,
+            textfont=dict(
+                size=14,  # Increased from 10 to 14
+                color='white',
+                family="Arial Black"  # Bold font for shadow
+            ),
+            showlegend=False,
+            hoverinfo='skip'
+        ))
+        
+        # Add main link markers and text
+        fig.add_trace(go.Scatter(
+            x=link_x,
+            y=link_y,
+            mode='markers+text',
+            marker=dict(
+                size=8,   # Reduced marker size to 8 to make text more prominent
+                color=link_colors,
+                line=dict(width=1, color='#34495e'),  # Thinner border
+                symbol=link_symbols,
+                opacity=0.6  # More transparent markers
+            ),
+            text=link_names,
+            textfont=dict(
+                size=12,  # Increased from 9 to 12
+                color='#1a252f',  # Darker color for better contrast
+                family="Arial Black"  # Bold font for main text
+            ),
+            customdata=link_customdata,
+            hovertemplate='%{hovertext}<extra></extra>',
+            hovertext=link_hover_text,
+            name='Links (clickable)',
+            showlegend=False
+        ))
+    else:
+        # Add main link markers only (no text, hover shows labels)
+        fig.add_trace(go.Scatter(
+            x=link_x,
+            y=link_y,
+            mode='markers',
+            marker=dict(
+                size=10,  # Slightly larger when no text
+                color=link_colors,
+                line=dict(width=1, color='#34495e'),
+                symbol=link_symbols,
+                opacity=0.8  # Less transparent when no text overlay
+            ),
+            customdata=link_customdata,
+            hovertemplate='%{hovertext}<extra></extra>',
+            hovertext=link_hover_text,
+            name='Links (clickable)',
+            showlegend=False
+        ))
     
     # Calculate pressure ranges for color scaling
     if node_pressures:
@@ -466,53 +492,81 @@ def create_network_plot(wn: WaterNetworkModel, selected_nodes: List[str] = None,
         hover_text += "<br>Click to select"
         node_hover_text.append(hover_text)
     
-    # Add white text shadow for better readability
-    fig.add_trace(go.Scatter(
-        x=node_x,
-        y=node_y,
-        mode='text',
-        text=node_names,
-        textposition='top center',
-        textfont=dict(
-            size=13,  # Increased from 12 to 13
-            color='white',
-            family="Arial Black"  # Bold font for shadow
-        ),
-        showlegend=False,
-        hoverinfo='skip'
-    ))
-    
-    # Add main node markers and text
-    fig.add_trace(go.Scatter(
-        x=node_x,
-        y=node_y,
-        mode='markers+text',
-        marker=dict(
-            size=node_sizes, 
-            color=node_colors, 
-            line=dict(width=2, color='#34495e'),  # Professional dark gray
-            symbol=node_symbols
-        ),
-        text=node_names,
-        textposition='top center',
-        textfont=dict(
-            size=12,  # Increased from 11 to 12
-            color='#1a252f',  # Darker color for better contrast
-            family="Arial Black"  # Bold font for main text
-        ),
-        # CRITICAL: Store name, type, and category in customdata
-        customdata=node_customdata,
-        hovertemplate='%{hovertext}<extra></extra>',
-        hovertext=node_hover_text,
-        name='Nodes (clickable)',
-        showlegend=False
-    ))
+    # Add node text (conditionally based on show_labels_always setting)
+    if show_labels_always:
+        # Add white text shadow for better readability
+        fig.add_trace(go.Scatter(
+            x=node_x,
+            y=node_y,
+            mode='text',
+            text=node_names,
+            textposition='top center',
+            textfont=dict(
+                size=13,  # Increased from 12 to 13
+                color='white',
+                family="Arial Black"  # Bold font for shadow
+            ),
+            showlegend=False,
+            hoverinfo='skip'
+        ))
+        
+        # Add main node markers and text
+        fig.add_trace(go.Scatter(
+            x=node_x,
+            y=node_y,
+            mode='markers+text',
+            marker=dict(
+                size=node_sizes, 
+                color=node_colors, 
+                line=dict(width=2, color='#34495e'),  # Professional dark gray
+                symbol=node_symbols
+            ),
+            text=node_names,
+            textposition='top center',
+            textfont=dict(
+                size=12,  # Increased from 11 to 12
+                color='#1a252f',  # Darker color for better contrast
+                family="Arial Black"  # Bold font for main text
+            ),
+            # CRITICAL: Store name, type, and category in customdata
+            customdata=node_customdata,
+            hovertemplate='%{hovertext}<extra></extra>',
+            hovertext=node_hover_text,
+            name='Nodes (clickable)',
+            showlegend=False
+        ))
+    else:
+        # Add main node markers only (no text, hover shows labels)
+        fig.add_trace(go.Scatter(
+            x=node_x,
+            y=node_y,
+            mode='markers',
+            marker=dict(
+                size=node_sizes, 
+                color=node_colors, 
+                line=dict(width=2, color='#34495e'),
+                symbol=node_symbols
+            ),
+            # CRITICAL: Store name, type, and category in customdata
+            customdata=node_customdata,
+            hovertemplate='%{hovertext}<extra></extra>',
+            hovertext=node_hover_text,
+            name='Nodes (clickable)',
+            showlegend=False
+        ))
     
     # Create title based on visualization mode
     if show_simulation_data and sim_initialized:
-        title = "🌊 Live Network Simulation - Pressure (Node Colors) & Flow (Link Width/Color)"
+        # Determine scaling types for title
+        pressure_range = max_pressure - min_pressure if node_pressures else 0
+        max_abs_flow = max(abs(min_flow), abs(max_flow)) if link_flows else 0
+        
+        pressure_scale = "Enhanced" if pressure_range < 5.0 and pressure_range > 0 else "Linear"
+        flow_scale = "Log" if max_abs_flow < 0.01 and max_abs_flow > 0 else "Linear"
+        
+        title = f"🌊 Live Network Simulation - Nodes: Grey→Red ({pressure_scale}) | Links: Grey→Blue ({flow_scale})"
         if node_pressures:
-            title += f"<br><sub>Pressure Range: {min_pressure:.1f} - {max_pressure:.1f} m | Flow Range: {min_flow:.3f} - {max_flow:.3f} m³/s</sub>"
+            title += f"<br><sub>Pressure: {min_pressure:.2f}-{max_pressure:.2f}m (Δ{pressure_range:.2f}m) | Flow: {min_flow:.4f}-{max_flow:.4f} m³/s</sub>"
     else:
         title = "Interactive Water Network - Click on elements to select them"
     
@@ -531,12 +585,16 @@ def create_network_plot(wn: WaterNetworkModel, selected_nodes: List[str] = None,
 
 
 def create_pressure_colorbar(min_pressure, max_pressure):
-    """Create a simple pressure colorbar."""
+    """Create a pressure colorbar showing enhanced grey-to-red scale."""
     fig = go.Figure()
     
-    # Create a simple colorbar
+    # Create enhanced colorbar with grey-to-red colors
     pressures = np.linspace(min_pressure, max_pressure, 100)
     colors = [get_pressure_color(p, min_pressure, max_pressure) for p in pressures]
+    
+    # Determine if we're using enhanced scaling for narrow ranges
+    pressure_range = max_pressure - min_pressure
+    scale_type = "Enhanced" if pressure_range < 5.0 else "Linear"
     
     fig.add_trace(go.Scatter(
         x=pressures,
@@ -548,11 +606,11 @@ def create_pressure_colorbar(min_pressure, max_pressure):
             line=dict(width=0)
         ),
         showlegend=False,
-        hovertemplate='Pressure: %{x:.2f} m<extra></extra>'
+        hovertemplate=f'Pressure: %{{x:.2f}} m<br>Range: {pressure_range:.2f}m ({scale_type})<br>Grey=Low, Red=High<extra></extra>'
     ))
     
     fig.update_layout(
-        title="🔵 Node Pressure",
+        title=f"🔴 Node Pressure (Grey→Red) | Range: {pressure_range:.2f}m",
         xaxis_title="Pressure (m)",
         yaxis=dict(showticklabels=False, showgrid=False),
         height=120,
@@ -563,10 +621,10 @@ def create_pressure_colorbar(min_pressure, max_pressure):
 
 
 def create_flow_colorbar(min_flow, max_flow):
-    """Create a simple flow colorbar."""
+    """Create a flow colorbar showing enhanced grey-to-dark-blue scale."""
     fig = go.Figure()
     
-    # Create a simple colorbar
+    # Create enhanced colorbar with grey-to-dark-blue colors
     flows = np.linspace(min_flow, max_flow, 100)
     colors = []
     widths = []
@@ -575,6 +633,10 @@ def create_flow_colorbar(min_flow, max_flow):
         color, width = get_flow_color_and_width(f, min_flow, max_flow)
         colors.append(color)
         widths.append(max(6, min(width, 15)))  # Scale for visibility
+    
+    # Determine scaling type based on flow range
+    max_abs_flow = max(abs(min_flow), abs(max_flow))
+    scale_type = "Log" if max_abs_flow < 0.01 else "Linear"
     
     fig.add_trace(go.Scatter(
         x=flows,
@@ -586,11 +648,11 @@ def create_flow_colorbar(min_flow, max_flow):
             line=dict(width=0)
         ),
         showlegend=False,
-        hovertemplate='Flow: %{x:.4f} m³/s<extra></extra>'
+        hovertemplate=f'Flow: %{{x:.4f}} m³/s<br>Max: {max_abs_flow:.4f} ({scale_type})<br>Grey=No Flow, Blue=Max Flow<extra></extra>'
     ))
     
     fig.update_layout(
-        title="🔗 Link Flow",
+        title=f"🔵 Link Flow (Grey→Blue) | Max: {max_abs_flow:.4f} m³/s",
         xaxis_title="Flow (m³/s)",
         yaxis=dict(showticklabels=False, showgrid=False),
         height=120,
