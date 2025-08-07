@@ -877,43 +877,44 @@ def create_state_visualization_plot(wn: WaterNetworkModel, height: int = 700,
     ))
     
     # Add dynamic legend - only show legend items for states that actually exist
+    # Using empty traces positioned outside plot area to avoid overlapping symbols
     legend_elements = []
     
     # Only add Active Demand legend if there are actually nodes with manual demands
     if nodes_with_demands:
         legend_elements.append(
-            go.Scatter(x=[None], y=[None], mode='markers', 
+            go.Scatter(x=[-999], y=[-999], mode='markers', 
                       marker=dict(size=12, color='#63B3ED', symbol='circle',
                                  line=dict(width=2, color='#2B6CB0')),
-                      name='🔵 Active Demand', showlegend=True)
+                      name='🔵 Active Demand', showlegend=True, visible='legendonly')
         )
     
     # Only add Leak legend if there are actually nodes with leaks
     if nodes_with_leaks:
         legend_elements.append(
-            go.Scatter(x=[None], y=[None], mode='markers', 
+            go.Scatter(x=[-999], y=[-999], mode='markers', 
                       marker=dict(size=14, color='#FC8181', symbol='triangle-up',
                                  line=dict(width=3, color='#C53030')),
-                      name='🔴 Critical Leak', showlegend=True)
+                      name='🔴 Critical Leak', showlegend=True, visible='legendonly')
         )
     
     # Only add Closed Link legend if there are actually closed links
     if closed_links:
         legend_elements.append(
-            go.Scatter(x=[None], y=[None], mode='lines', 
+            go.Scatter(x=[-999], y=[-999], mode='lines', 
                       line=dict(color='#E53E3E', width=4, dash='5px,5px'),
-                      name='🚫 Closed Link', showlegend=True)
+                      name='🚫 Closed Link', showlegend=True, visible='legendonly')
         )
     
     # Always show these since they represent the default/normal state
     legend_elements.extend([
-        go.Scatter(x=[None], y=[None], mode='markers', 
+        go.Scatter(x=[-999], y=[-999], mode='markers', 
                   marker=dict(size=9, color='#E2E8F0', symbol='circle',
                              line=dict(width=1, color='#718096')),
-                  name='⚪ Inactive Node', showlegend=True),
-        go.Scatter(x=[None], y=[None], mode='lines', 
+                  name='⚪ Inactive Node', showlegend=True, visible='legendonly'),
+        go.Scatter(x=[-999], y=[-999], mode='lines', 
                   line=dict(color='#38A169', width=3),
-                  name='✅ Open Link', showlegend=True)
+                  name='✅ Open Link', showlegend=True, visible='legendonly')
     ])
     
     for element in legend_elements:
