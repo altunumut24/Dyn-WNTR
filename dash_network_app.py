@@ -469,9 +469,8 @@ def create_interactive_content():
             ], width=12)
         ]),
         
-        # Main content row with dual plots
+        # Primary Network Map (Pressure/Flow) - Always shown
         dbc.Row([
-            # Primary Network Map (Pressure/Flow)
             dbc.Col([
                 dbc.Card([
                     dbc.CardHeader(html.H5("🌊 Pressure & Flow Visualization", className="mb-0")),
@@ -480,20 +479,22 @@ def create_interactive_content():
                         html.Div(id="color-legends-container", className="mt-2")
                     ])
                 ])
-            ], width=6, id="primary-map-col"),
-            
-            # Secondary State Map (Demands/Leaks/Closures)
+            ], width=12, id="primary-map-col")
+        ], className="mb-3"),
+        
+        # Secondary State Map (Demands/Leaks/Closures) - Shown below in dual view
+        dbc.Row([
             dbc.Col([
                 dbc.Card([
-                    dbc.CardHeader(html.H5("🔍 Network Operational States", className="mb-0")),
+                    dbc.CardHeader(html.H5("🎯 Network Operational States", className="mb-0")),
                     dbc.CardBody([
                         html.Div(id="state-map-container"),
-                        dbc.Alert("Shows: 💧 Active Demands | ⚠️ Leaks | ❌ Closed Links", 
+                        dbc.Alert("Shows: 🔵 Active Demands | 🔴 Leaks | 🚫 Closed Links", 
                                 color="light", className="mt-2 small")
                     ])
                 ])
-            ], width=6, id="state-map-col")
-        ]),
+            ], width=12, id="state-map-col")
+        ], id="state-map-row"),
         
         # Control panel row
         dbc.Row([
@@ -687,65 +688,61 @@ def toggle_batch_label_visibility(always_clicks, hover_clicks, current_state):
     else:
         return False, "outline-primary", "primary"
 
-# View mode toggle callback
+# View mode toggle callback (vertical stacking)
 @app.callback(
     [Output('view-mode', 'data'),
      Output('dual-view-btn', 'color'),
      Output('single-view-btn', 'color'),
-     Output('primary-map-col', 'width'),
-     Output('state-map-col', 'width'),
-     Output('state-map-col', 'style')],
+     Output('state-map-row', 'style')],
     [Input('dual-view-btn', 'n_clicks'),
      Input('single-view-btn', 'n_clicks')],
     State('view-mode', 'data'),
     prevent_initial_call=True
 )
 def toggle_view_mode(dual_clicks, single_clicks, current_mode):
-    """Toggle between dual and single view modes."""
+    """Toggle between dual and single view modes - vertical stacking."""
     ctx_triggered = ctx.triggered_id if hasattr(ctx, "triggered_id") else None
     
     if ctx_triggered == 'dual-view-btn':
-        # Dual view mode - both plots side by side
-        return 'dual', "success", "outline-success", 6, 6, {}
+        # Dual view mode - show state plot below pressure/flow plot
+        return 'dual', "success", "outline-success", {}
     elif ctx_triggered == 'single-view-btn':
-        # Single view mode - only primary plot
-        return 'single', "outline-success", "success", 12, 0, {"display": "none"}
+        # Single view mode - hide state plot, show only pressure/flow plot
+        return 'single', "outline-success", "success", {"display": "none"}
     
     # Default state based on current mode
     if current_mode == 'dual':
-        return 'dual', "success", "outline-success", 6, 6, {}
+        return 'dual', "success", "outline-success", {}
     else:
-        return 'single', "outline-success", "success", 12, 0, {"display": "none"}
+        return 'single', "outline-success", "success", {"display": "none"}
 
 # Batch view mode toggle callback
 @app.callback(
     [Output('batch-view-mode', 'data'),
      Output('batch-dual-view-btn', 'color'),
      Output('batch-single-view-btn', 'color'),
-     Output('batch-primary-map-col', 'width'),
-     Output('batch-state-map-col', 'width'),
-     Output('batch-state-map-col', 'style')],
+     Output('batch-state-map-row', 'style')],
     [Input('batch-dual-view-btn', 'n_clicks'),
      Input('batch-single-view-btn', 'n_clicks')],
     State('batch-view-mode', 'data'),
     prevent_initial_call=True
 )
 def toggle_batch_view_mode(dual_clicks, single_clicks, current_mode):
-    """Toggle between dual and single view modes in batch mode."""
+    """Toggle between dual and single view modes in batch mode - vertical stacking."""
     ctx_triggered = ctx.triggered_id if hasattr(ctx, "triggered_id") else None
     
     if ctx_triggered == 'batch-dual-view-btn':
-        # Dual view mode - both plots side by side
-        return 'dual', "success", "outline-success", 6, 6, {}
+        # Dual view mode - show state plot below pressure/flow plot
+        return 'dual', "success", "outline-success", {}
     elif ctx_triggered == 'batch-single-view-btn':
-        # Single view mode - only primary plot
-        return 'single', "outline-success", "success", 12, 0, {"display": "none"}
+        # Single view mode - hide state plot, show only pressure/flow plot
+        return 'single', "outline-success", "success", {"display": "none"}
     
     # Default state based on current mode
     if current_mode == 'dual':
-        return 'dual', "success", "outline-success", 6, 6, {}
+        return 'dual', "success", "outline-success", {}
     else:
-        return 'single', "outline-success", "success", 12, 0, {"display": "none"}
+        return 'single', "outline-success", "success", {"display": "none"}
 
 # Upload status callback - provides immediate feedback when file is selected
 @app.callback(
@@ -2374,9 +2371,8 @@ def display_batch_main_area(network_loaded, batch_events, batch_metadata):
                     ])
                 ], className="mb-3"),
                 
-                # Dual plot row
+                # Primary Network Map (Pressure/Flow) - Always shown
                 dbc.Row([
-                    # Primary Network Map (Pressure/Flow)
                     dbc.Col([
                         dbc.Card([
                             dbc.CardHeader(html.H6("🌊 Pressure & Flow", className="mb-0")),
@@ -2385,20 +2381,22 @@ def display_batch_main_area(network_loaded, batch_events, batch_metadata):
                                 html.Div(id="batch-color-legends-container", className="mt-2")
                             ])
                         ])
-                    ], width=6, id="batch-primary-map-col"),
-                    
-                    # Secondary State Map
+                    ], width=12, id="batch-primary-map-col")
+                ], className="mb-3"),
+                
+                # Secondary State Map - Shown below in dual view
+                dbc.Row([
                     dbc.Col([
                         dbc.Card([
-                            dbc.CardHeader(html.H6("🔍 Operational States", className="mb-0")),
+                            dbc.CardHeader(html.H6("🎯 Operational States", className="mb-0")),
                             dbc.CardBody([
                                 html.Div(id="batch-state-map-container"),
-                                dbc.Alert("💧 Demands | ⚠️ Leaks | ❌ Closed", 
+                                dbc.Alert("🔵 Demands | 🔴 Leaks | 🚫 Closed", 
                                         color="light", className="mt-2 small")
                             ])
                         ])
-                    ], width=6, id="batch-state-map-col")
-                ])
+                    ], width=12, id="batch-state-map-col")
+                ], id="batch-state-map-row")
             ], width=8)
         ]),
         
