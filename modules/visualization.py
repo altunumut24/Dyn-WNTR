@@ -685,6 +685,7 @@ def create_state_visualization_plot(wn: WaterNetworkModel, height: int = 700,
     link_x = []
     link_y = []
     link_texts = []
+    link_shadow_texts = []  # Text for shadow (without symbols)
     link_colors = []
     link_symbols = []
     link_hover_text = []
@@ -706,10 +707,12 @@ def create_state_visualization_plot(wn: WaterNetworkModel, height: int = 700,
         
         # Visual styling based on status (professional colors)
         if status == "CLOSED":
-            link_texts.append(f"❌ {link_name}")
+            link_texts.append(f"❌ {link_name}")  # Main text with symbol
+            link_shadow_texts.append(link_name)   # Shadow text without symbol
             link_colors.append('#C53030')  # Professional dark red
         else:
             link_texts.append(link_name)
+            link_shadow_texts.append(link_name)
             link_colors.append('#2F855A')  # Professional dark green
         
         # Symbol based on link type
@@ -724,12 +727,12 @@ def create_state_visualization_plot(wn: WaterNetworkModel, height: int = 700,
     
     # Add link labels with hover information
     if show_labels_always:
-        # White text shadow for better visibility
+        # White text shadow for better visibility (without symbols to avoid duplication)
         fig.add_trace(go.Scatter(
             x=link_x,
             y=link_y,
             mode='text',
-            text=link_texts,
+            text=link_shadow_texts,  # Use shadow text without symbols
             textfont=dict(
                 size=13,
                 color='rgba(255,255,255,0.95)',  # Slightly transparent white for elegance
