@@ -584,6 +584,382 @@ def create_network_plot(wn: WaterNetworkModel, selected_nodes: List[str] = None,
     return fig
 
 
+def create_state_visualization_plot(wn: WaterNetworkModel, height: int = 700, 
+                                   node_size_scale: float = 1.0, show_labels_always: bool = True):
+    """
+    Create a dedicated network visualization showing operational states.
+    
+    This secondary plot focuses on displaying:
+    - Junctions with active demands (blue nodes)
+    - Junctions with leaks (red nodes with warning symbol)
+    - Closed pipes/pumps/valves (dashed red lines)
+    - Open/active components (solid green lines)
+    
+    Args:
+        wn (WaterNetworkModel): The water network model
+        height (int): Plot height in pixels
+        node_size_scale (float): Scale factor for node sizes
+        show_labels_always (bool): Whether to always show element labels
+        
+    Returns:
+        go.Figure: Plotly figure showing network operational states
+    """
+    node_positions, edge_list, node_info, edge_info = get_network_layout(wn)
+    
+    fig = go.Figure()
+    
+    # Collect state information
+    nodes_with_demands = set()
+    nodes_with_leaks = set()
+    closed_links = set()
+    
+    # Check nodes for manually added demands and leaks
+    for node_name, node in wn.nodes():
+        # Check for manually added demands ONLY (exclude base demands from network file)
+        if hasattr(node, 'demand_timeseries_list'):
+            try:
+                # Check if there are any demands with specific categories (manually added)
+                # Base demands from network file have category=None, we want to ignore those
+                has_manual_demand = False
+                
+                for demand in node.demand_timeseries_list:
+                    # Only count demands with categories (user_added, fire_fighting, etc.)
+                    # Ignore base demands from network file (category=None)
+                    if hasattr(demand, 'category') and demand.category is not None:
+                        current_time = wn.sim_time if hasattr(wn, 'sim_time') else 0
+                        demand_value = demand.at(current_time)
+                        if demand_value > 0.0001:  # Threshold to avoid near-zero demands
+                            has_manual_demand = True
+                            break
+                
+                if has_manual_demand:
+                    nodes_with_demands.add(node_name)
+                    
+            except Exception as e:
+                # If there's any error accessing demand details, skip this node
+                pass
+        
+        # Check for leaks
+        if hasattr(node, '_leak') and node._leak:
+            nodes_with_leaks.add(node_name)
+        elif hasattr(node, 'leak_demand') and node.leak_demand and node.leak_demand > 0:
+            nodes_with_leaks.add(node_name)
+    
+    # Check links for closure status
+    for link_name, link in wn.links():
+        try:
+            # Check various ways a link might be closed
+            if hasattr(link, 'status'):
+                if link.status == LinkStatus.Closed:
+                    closed_links.add(link_name)
+            elif hasattr(link, '_status'):
+                if link._status == LinkStatus.Closed:
+                    closed_links.add(link_name)
+            elif hasattr(link, 'initial_status'):
+                if link.initial_status == LinkStatus.Closed:
+                    closed_links.add(link_name)
+        except:
+            pass
+    
+    # Draw edges with state-based styling (lines only, no markers yet)
+    for link_name, info in edge_info.items():
+        start_pos = node_positions[info['start']]
+        end_pos = node_positions[info['end']]
+        
+        # Determine line style and color based on closure status (professional styling)
+        if link_name in closed_links:
+            line_style = dict(color='#E53E3E', width=5, dash='5px,5px')  # Professional red with elegant dash
+        else:
+            line_style = dict(color='#38A169', width=4)  # Professional green
+        
+        fig.add_trace(go.Scatter(
+            x=[start_pos[0], end_pos[0]],
+            y=[start_pos[1], end_pos[1]],
+            mode='lines',
+            line=line_style,
+            showlegend=False,
+            hoverinfo='skip'  # Skip hover for lines, we'll add markers for hover
+        ))
+    
+    # Prepare link markers with hover information (similar to main network plot)
+    link_x = []
+    link_y = []
+    link_texts = []
+    link_colors = []
+    link_symbols = []
+    link_hover_text = []
+    link_customdata = []
+    
+    for link_name, info in edge_info.items():
+        link_x.append(info['mid_pos'][0])
+        link_y.append(info['mid_pos'][1])
+        
+        # Status determination
+        status = "CLOSED" if link_name in closed_links else "OPEN"
+        
+        # Create hover text with status information
+        hover_text = f"<b>{link_name}</b><br>Type: {info['type']}<br>Status: <b>{status}</b>"
+        link_hover_text.append(hover_text)
+        
+        # Store name and type as customdata for potential click detection
+        link_customdata.append([link_name, info['type'], 'link'])
+        
+        # Visual styling based on status (professional colors)
+        if status == "CLOSED":
+            link_texts.append(f"🚫 {link_name}")
+            link_colors.append('#C53030')  # Professional dark red
+        else:
+            link_texts.append(link_name)
+            link_colors.append('#2F855A')  # Professional dark green
+        
+        # Symbol based on link type
+        if info['type'] == 'Pipe':
+            link_symbols.append('square')
+        elif info['type'] == 'Pump':
+            link_symbols.append('triangle-up')
+        elif info['type'] == 'Valve':
+            link_symbols.append('diamond')
+        else:
+            link_symbols.append('square')
+    
+    # Add link labels with hover information
+    if show_labels_always:
+        # White text shadow for better visibility
+        fig.add_trace(go.Scatter(
+            x=link_x,
+            y=link_y,
+            mode='text',
+            text=link_texts,
+            textfont=dict(
+                size=13,
+                color='rgba(255,255,255,0.95)',  # Slightly transparent white for elegance
+                family="Arial Bold"
+            ),
+            showlegend=False,
+            hoverinfo='skip'
+        ))
+        
+        # Main link labels with hover
+        fig.add_trace(go.Scatter(
+            x=link_x,
+            y=link_y,
+            mode='markers+text',
+            marker=dict(
+                size=8,
+                color=link_colors,
+                symbol=link_symbols,
+                line=dict(width=1, color='black'),
+                opacity=0.7
+            ),
+            text=link_texts,
+            textfont=dict(
+                size=11,
+                color=link_colors,
+                family="Arial Bold"
+            ),
+            customdata=link_customdata,
+            hovertemplate='%{hovertext}<extra></extra>',
+            hovertext=link_hover_text,
+            name='Links (State View)',
+            showlegend=False
+        ))
+    else:
+        # Add link markers only (no text, hover shows names)
+        fig.add_trace(go.Scatter(
+            x=link_x,
+            y=link_y,
+            mode='markers',
+            marker=dict(
+                size=10,
+                color=link_colors,
+                symbol=link_symbols,
+                line=dict(width=1, color='black'),
+                opacity=0.8
+            ),
+            customdata=link_customdata,
+            hovertemplate='%{hovertext}<extra></extra>',
+            hovertext=link_hover_text,
+            name='Links (State View)',
+            showlegend=False
+        ))
+    
+    # Prepare node data for plotting
+    node_x = []
+    node_y = []
+    node_colors = []
+    node_sizes = []
+    node_symbols = []
+    node_texts = []
+    node_hovers = []
+    node_border_widths = []
+    node_border_colors = []
+    node_customdata = []
+    
+    # Base node size
+    base_size = 20 * node_size_scale
+    
+    for node_name, info in node_info.items():
+        node_x.append(info['pos'][0])
+        node_y.append(info['pos'][1])
+        
+        # Determine node appearance based on state
+        has_demand = node_name in nodes_with_demands
+        has_leak = node_name in nodes_with_leaks
+        
+        # Status text for hover
+        status_parts = []
+        if has_demand:
+            status_parts.append("Active Demand")
+        if has_leak:
+            status_parts.append("LEAK DETECTED")
+        if not status_parts:
+            status_parts.append("No Activity")
+        
+        # Professional color and symbol logic with enhanced visual hierarchy
+        if has_leak:
+            # Critical leak state - professional red alert styling
+            node_colors.append('#FC8181')  # Professional light red for fill
+            node_symbols.append('triangle-up')  # Alert triangle
+            node_sizes.append(base_size * 1.6)  # Significantly larger for critical visibility
+            node_border_widths.append(4)
+            node_border_colors.append('#C53030')  # Professional dark red border
+            node_texts.append(f"🔴 {node_name}")  # Professional alert symbol
+        elif has_demand:
+            # Active demand state - professional blue styling
+            node_colors.append('#63B3ED')  # Professional light blue for fill
+            node_symbols.append('circle')
+            node_sizes.append(base_size * 1.3)  # Moderately larger for active state
+            node_border_widths.append(3)
+            node_border_colors.append('#2B6CB0')  # Professional dark blue border
+            node_texts.append(f"🔵 {node_name}")  # Professional demand symbol
+        else:
+            # Inactive state - professional neutral styling
+            node_colors.append('#E2E8F0')  # Professional light grey for fill
+            node_symbols.append('circle')
+            node_sizes.append(base_size * 0.9)  # Slightly smaller for inactive state
+            node_border_widths.append(2)
+            node_border_colors.append('#718096')  # Professional medium grey border
+            node_texts.append(node_name)
+        
+        # Create hover text (following main plot format)
+        hover_text = f"<b>{node_name}</b><br>Type: {info['type']}<br>Status: {', '.join(status_parts)}"
+        node_hovers.append(hover_text)
+        
+        # Store name and type as customdata for potential click detection
+        node_customdata.append([node_name, info['type'], 'node'])
+    
+    # Add nodes with consistent hover format
+    fig.add_trace(go.Scatter(
+        x=node_x,
+        y=node_y,
+        mode='markers+text' if show_labels_always else 'markers',
+        marker=dict(
+            size=node_sizes,
+            color=node_colors,
+            symbol=node_symbols,
+            line=dict(
+                width=node_border_widths,
+                color=node_border_colors
+            )
+        ),
+        text=node_texts if show_labels_always else None,
+        textposition="top center",
+        textfont=dict(
+            size=11,  # Slightly larger for better readability
+            color='#2D3748',  # Professional dark grey instead of pure black
+            family="Arial Bold"  # Bold for better visibility
+        ),
+        customdata=node_customdata,
+        hovertemplate='%{hovertext}<extra></extra>',
+        hovertext=node_hovers,
+        name='Junctions (State View)',
+        showlegend=False
+    ))
+    
+    # Add dynamic legend - only show legend items for states that actually exist
+    legend_elements = []
+    
+    # Only add Active Demand legend if there are actually nodes with manual demands
+    if nodes_with_demands:
+        legend_elements.append(
+            go.Scatter(x=[None], y=[None], mode='markers', 
+                      marker=dict(size=12, color='#63B3ED', symbol='circle',
+                                 line=dict(width=2, color='#2B6CB0')),
+                      name='🔵 Active Demand', showlegend=True)
+        )
+    
+    # Only add Leak legend if there are actually nodes with leaks
+    if nodes_with_leaks:
+        legend_elements.append(
+            go.Scatter(x=[None], y=[None], mode='markers', 
+                      marker=dict(size=14, color='#FC8181', symbol='triangle-up',
+                                 line=dict(width=3, color='#C53030')),
+                      name='🔴 Critical Leak', showlegend=True)
+        )
+    
+    # Only add Closed Link legend if there are actually closed links
+    if closed_links:
+        legend_elements.append(
+            go.Scatter(x=[None], y=[None], mode='lines', 
+                      line=dict(color='#E53E3E', width=4, dash='5px,5px'),
+                      name='🚫 Closed Link', showlegend=True)
+        )
+    
+    # Always show these since they represent the default/normal state
+    legend_elements.extend([
+        go.Scatter(x=[None], y=[None], mode='markers', 
+                  marker=dict(size=9, color='#E2E8F0', symbol='circle',
+                             line=dict(width=1, color='#718096')),
+                  name='⚪ Inactive Node', showlegend=True),
+        go.Scatter(x=[None], y=[None], mode='lines', 
+                  line=dict(color='#38A169', width=3),
+                  name='✅ Open Link', showlegend=True)
+    ])
+    
+    for element in legend_elements:
+        fig.add_trace(element)
+    
+    # Update layout
+    fig.update_layout(
+        title=dict(
+            text="🎯 Network Operational States",
+            x=0.5,
+            xanchor='center',
+            font=dict(size=18, family="Arial Bold", color='#2D3748')
+        ),
+        showlegend=True,
+        legend=dict(
+            orientation="v",
+            yanchor="top",
+            y=1,
+            xanchor="left",
+            x=1.02,
+            bgcolor="rgba(255,255,255,0.9)",
+            bordercolor="rgba(0,0,0,0.2)",
+            borderwidth=1
+        ),
+        hovermode='closest',
+        margin=dict(l=0, r=150, t=40, b=0),  # Extra right margin for legend
+        xaxis=dict(
+            showgrid=False,
+            zeroline=False,
+            showticklabels=False,
+            scaleanchor="y",
+            scaleratio=1
+        ),
+        yaxis=dict(
+            showgrid=False,
+            zeroline=False,
+            showticklabels=False
+        ),
+        plot_bgcolor='#f8f9fa',
+        paper_bgcolor='white',
+        height=height
+    )
+    
+    return fig
+
+
 def create_pressure_colorbar(min_pressure, max_pressure):
     """Create a pressure colorbar showing enhanced grey-to-red scale."""
     fig = go.Figure()

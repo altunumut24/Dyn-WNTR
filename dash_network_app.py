@@ -192,6 +192,10 @@ def create_stores():
         
         # Label visibility control
         dcc.Store(id='show-labels-always', data=True),
+        
+        # View mode control (dual vs single)
+        dcc.Store(id='view-mode', data='dual'),
+        dcc.Store(id='batch-view-mode', data='dual'),
     ]
 
 # Batch layout removed - to be implemented from scratch
@@ -416,10 +420,9 @@ def render_tab_content(active_tab):
 def create_interactive_content():
     """Create the interactive mode content."""
     interactive_main_content = [
+        # Map controls row
         dbc.Row([
-            # Map column
             dbc.Col([
-                # Map controls
                 dbc.Card([
                     dbc.CardBody([
                         dbc.Alert("🖱️ Click on nodes (circles) or links (squares) to select and configure events", 
@@ -428,12 +431,12 @@ def create_interactive_content():
                             dbc.Col([
                                 dbc.Label("Map Height"),
                                 dbc.Select([
+                                    {"label": "600px", "value": 600},
                                     {"label": "700px", "value": 700},
                                     {"label": "800px", "value": 800},
-                                    {"label": "900px", "value": 900},
-                                    {"label": "1000px", "value": 1000}
-                                ], value=800, id="map-height-select")
-                            ], width=3),
+                                    {"label": "900px", "value": 900}
+                                ], value=700, id="map-height-select")
+                            ], width=2),
                             dbc.Col([
                                 dbc.Label("Node Size"),
                                 dbc.Select([
@@ -442,69 +445,102 @@ def create_interactive_content():
                                     {"label": "100%", "value": 1.0},
                                     {"label": "120%", "value": 1.2}
                                 ], value=1.0, id="node-size-select")
-                            ], width=3),
+                            ], width=2),
                             dbc.Col([
                                 dbc.Label("Labels"),
                                 dbc.ButtonGroup([
                                     dbc.Button("Always", id="labels-always-btn", color="primary", size="sm"),
                                     dbc.Button("Hover", id="labels-hover-btn", color="outline-primary", size="sm")
                                 ], className="w-100")
+                            ], width=2),
+                            dbc.Col([
+                                dbc.Label("View"),
+                                dbc.ButtonGroup([
+                                    dbc.Button("Dual View", id="dual-view-btn", color="success", size="sm"),
+                                    dbc.Button("Single View", id="single-view-btn", color="outline-success", size="sm")
+                                ], className="w-100")
                             ], width=3),
                             dbc.Col([
-                                dbc.Button("🧭 Legend", id="legend-btn", color="info", size="sm")
+                                dbc.Button("🧭 Legend", id="legend-btn", color="info", size="sm", className="mt-4")
                             ], width=3)
                         ])
                     ])
-                ], className="mb-3"),
-                
-                # Network map
-                html.Div(id="network-map-container"),
-                
-                # Color legends
-                html.Div(id="color-legends-container")
-            ], width=8),
+                ], className="mb-3")
+            ], width=12)
+        ]),
+        
+        # Main content row with dual plots
+        dbc.Row([
+            # Primary Network Map (Pressure/Flow)
+            dbc.Col([
+                dbc.Card([
+                    dbc.CardHeader(html.H5("🌊 Pressure & Flow Visualization", className="mb-0")),
+                    dbc.CardBody([
+                        html.Div(id="network-map-container"),
+                        html.Div(id="color-legends-container", className="mt-2")
+                    ])
+                ])
+            ], width=6, id="primary-map-col"),
             
-            # Control panel column (simplified)
+            # Secondary State Map (Demands/Leaks/Closures)
+            dbc.Col([
+                dbc.Card([
+                    dbc.CardHeader(html.H5("🔍 Network Operational States", className="mb-0")),
+                    dbc.CardBody([
+                        html.Div(id="state-map-container"),
+                        dbc.Alert("Shows: 💧 Active Demands | ⚠️ Leaks | ❌ Closed Links", 
+                                color="light", className="mt-2 small")
+                    ])
+                ])
+            ], width=6, id="state-map-col")
+        ]),
+        
+        # Control panel row
+        dbc.Row([
             dbc.Col([
                 # Simulation controls
                 dbc.Card([
                     dbc.CardHeader(html.H5("⚡ Simulation Controls")),
                     dbc.CardBody([
-                        html.Div(id="sim-status"),
-                        
-                        # Simulation progress
-                        html.Div(id="simulation-progress-display", className="mb-3"),
-                        
-                        # Planning controls
                         dbc.Row([
                             dbc.Col([
-                                dbc.Label("Duration (hours)"),
-                                dbc.Input(id="duration-input", type="number", 
-                                        value=24, min=1, max=87600, step=1)
-                            ], width=6),
+                                html.Div(id="sim-status"),
+                                # Simulation progress
+                                html.Div(id="simulation-progress-display", className="mb-3")
+                            ], width=8),
                             dbc.Col([
-                                dbc.Label("Timestep (minutes)"),
-                                dbc.Select([
-                                    {"label": "15 min", "value": 15},
-                                    {"label": "30 min", "value": 30},
-                                    {"label": "60 min", "value": 60},
-                                    {"label": "120 min", "value": 120},
-                                ], value=60, id="timestep-select")
-                            ], width=6)
-                        ], className="mb-3"),
-                        
-                        # Control buttons
-                        dbc.ButtonGroup([
-                            dbc.Button("🚀 Initialize", id="init-btn", color="success"),
-                            dbc.Button("⏭️ Step", id="step-btn", color="primary", disabled=True),
-                            dbc.Button("▶️ Play", id="play-step-btn", color="success", disabled=True),
-                            dbc.Button("⏸️ Pause", id="pause-step-btn", color="warning", disabled=True),
-                            dbc.Button("🔄 Reset", id="reset-btn", color="secondary")
-                        ], className="w-100")
+                                # Planning controls
+                                dbc.Row([
+                                    dbc.Col([
+                                        dbc.Label("Duration (hours)"),
+                                        dbc.Input(id="duration-input", type="number", 
+                                                value=24, min=1, max=87600, step=1)
+                                    ], width=6),
+                                    dbc.Col([
+                                        dbc.Label("Timestep (minutes)"),
+                                        dbc.Select([
+                                            {"label": "15 min", "value": 15},
+                                            {"label": "30 min", "value": 30},
+                                            {"label": "60 min", "value": 60},
+                                            {"label": "120 min", "value": 120},
+                                        ], value=60, id="timestep-select")
+                                    ], width=6)
+                                ], className="mb-3"),
+                                
+                                # Control buttons
+                                dbc.ButtonGroup([
+                                    dbc.Button("🚀 Initialize", id="init-btn", color="success"),
+                                    dbc.Button("⏭️ Step", id="step-btn", color="primary", disabled=True),
+                                    dbc.Button("▶️ Play", id="play-step-btn", color="success", disabled=True),
+                                    dbc.Button("⏸️ Pause", id="pause-step-btn", color="warning", disabled=True),
+                                    dbc.Button("🔄 Reset", id="reset-btn", color="secondary")
+                                ], className="w-100")
+                            ], width=4)
+                        ])
                     ])
-                ], className="mb-3")
-            ], width=4)
-        ]),
+                ])
+            ], width=12)
+        ], className="mt-3"),
         
         # Results section
         html.Hr(),
@@ -650,6 +686,66 @@ def toggle_batch_label_visibility(always_clicks, hover_clicks, current_state):
         return True, "primary", "outline-primary"
     else:
         return False, "outline-primary", "primary"
+
+# View mode toggle callback
+@app.callback(
+    [Output('view-mode', 'data'),
+     Output('dual-view-btn', 'color'),
+     Output('single-view-btn', 'color'),
+     Output('primary-map-col', 'width'),
+     Output('state-map-col', 'width'),
+     Output('state-map-col', 'style')],
+    [Input('dual-view-btn', 'n_clicks'),
+     Input('single-view-btn', 'n_clicks')],
+    State('view-mode', 'data'),
+    prevent_initial_call=True
+)
+def toggle_view_mode(dual_clicks, single_clicks, current_mode):
+    """Toggle between dual and single view modes."""
+    ctx_triggered = ctx.triggered_id if hasattr(ctx, "triggered_id") else None
+    
+    if ctx_triggered == 'dual-view-btn':
+        # Dual view mode - both plots side by side
+        return 'dual', "success", "outline-success", 6, 6, {}
+    elif ctx_triggered == 'single-view-btn':
+        # Single view mode - only primary plot
+        return 'single', "outline-success", "success", 12, 0, {"display": "none"}
+    
+    # Default state based on current mode
+    if current_mode == 'dual':
+        return 'dual', "success", "outline-success", 6, 6, {}
+    else:
+        return 'single', "outline-success", "success", 12, 0, {"display": "none"}
+
+# Batch view mode toggle callback
+@app.callback(
+    [Output('batch-view-mode', 'data'),
+     Output('batch-dual-view-btn', 'color'),
+     Output('batch-single-view-btn', 'color'),
+     Output('batch-primary-map-col', 'width'),
+     Output('batch-state-map-col', 'width'),
+     Output('batch-state-map-col', 'style')],
+    [Input('batch-dual-view-btn', 'n_clicks'),
+     Input('batch-single-view-btn', 'n_clicks')],
+    State('batch-view-mode', 'data'),
+    prevent_initial_call=True
+)
+def toggle_batch_view_mode(dual_clicks, single_clicks, current_mode):
+    """Toggle between dual and single view modes in batch mode."""
+    ctx_triggered = ctx.triggered_id if hasattr(ctx, "triggered_id") else None
+    
+    if ctx_triggered == 'batch-dual-view-btn':
+        # Dual view mode - both plots side by side
+        return 'dual', "success", "outline-success", 6, 6, {}
+    elif ctx_triggered == 'batch-single-view-btn':
+        # Single view mode - only primary plot
+        return 'single', "outline-success", "success", 12, 0, {"display": "none"}
+    
+    # Default state based on current mode
+    if current_mode == 'dual':
+        return 'dual', "success", "outline-success", 6, 6, {}
+    else:
+        return 'single', "outline-success", "success", 12, 0, {"display": "none"}
 
 # Upload status callback - provides immediate feedback when file is selected
 @app.callback(
@@ -871,10 +967,11 @@ def ensure_monitoring_on_init(sim_initialized, current_nodes, current_links, met
     
     return current_nodes or [], current_links or []
 
-# Network map callback
+# Network map callback (dual view)
 @app.callback(
     [Output('network-map-container', 'children'),
-     Output('color-legends-container', 'children')],
+     Output('color-legends-container', 'children'),
+     Output('state-map-container', 'children')],
     [Input('network-loaded', 'data'),
      Input('map-height-select', 'value'),
      Input('node-size-select', 'value'),
@@ -886,20 +983,21 @@ def ensure_monitoring_on_init(sim_initialized, current_nodes, current_links, met
      Input('show-labels-always', 'data')],
     prevent_initial_call=True
 )
-def update_network_map(network_loaded, map_height, node_size, 
+def update_network_maps(network_loaded, map_height, node_size, 
                       selected_nodes, selected_links, sim_initialized, simulation_data, current_time, show_labels_always):
-    """Update the network map visualization."""
+    """Update both network map visualizations."""
     try:
         if not network_loaded or global_state['wn'] is None:
-            return "", ""
+            return "", "", ""
         
         wn = global_state['wn']
         show_sim_data = sim_initialized or False
         
         # Create network plot using existing visualization module
-        map_height_int = int(map_height) if map_height else 800
+        map_height_int = int(map_height) if map_height else 700
         node_size_float = float(node_size) if node_size else 1.0
         
+        # Primary network plot (pressure/flow)
         fig = create_network_plot(
             wn,
             selected_nodes or [],
@@ -913,6 +1011,17 @@ def update_network_map(network_loaded, map_height, node_size,
         
         map_component = dcc.Graph(id="network-graph", figure=fig)
         
+        # State visualization plot
+        from modules.visualization import create_state_visualization_plot
+        state_fig = create_state_visualization_plot(
+            wn,
+            height=map_height_int,
+            node_size_scale=node_size_float,
+            show_labels_always=show_labels_always
+        )
+        
+        state_component = dcc.Graph(id="state-graph", figure=state_fig)
+        
         # Create color legends if showing simulation data
         legends = ""
         if show_sim_data:
@@ -922,17 +1031,18 @@ def update_network_map(network_loaded, map_height, node_size,
             
             legends = dbc.Row([
                 dbc.Col([
-                    dcc.Graph(figure=pressure_fig, style={"height": "150px"})
+                    dcc.Graph(figure=pressure_fig, style={"height": "120px"})
                 ], width=6),
                 dbc.Col([
-                    dcc.Graph(figure=flow_fig, style={"height": "150px"})
+                    dcc.Graph(figure=flow_fig, style={"height": "120px"})
                 ], width=6)
             ])
         
-        return map_component, legends
+        return map_component, legends, state_component
     except Exception as e:
-        print(f"Error in update_network_map: {e}")
-        return dbc.Alert(f"Error updating map: {str(e)}", color="danger"), ""
+        print(f"Error in update_network_maps: {e}")
+        error_alert = dbc.Alert(f"Error updating map: {str(e)}", color="danger")
+        return error_alert, "", error_alert
 
 # Element selection callback (from map clicks) - now opens modal
 @app.callback(
@@ -940,19 +1050,71 @@ def update_network_map(network_loaded, map_height, node_size,
      Output('selected-nodes', 'data'),
      Output('selected-links', 'data'),
      Output('event-config-modal', 'is_open')],
-    Input('network-graph', 'clickData'),
+    [Input('network-graph', 'clickData'),
+     Input('state-graph', 'clickData')],
     [State('network-loaded', 'data'),
      State('network-metadata', 'data')],
     prevent_initial_call=True
 )
-def handle_map_click(click_data, network_loaded, metadata):
-    """Handle clicks on the network map - opens modal for event configuration."""
-    if not click_data or not network_loaded:
+def handle_map_clicks(primary_click_data, state_click_data, network_loaded, metadata):
+    """Handle clicks on both network maps - opens modal for event configuration."""
+    if not network_loaded:
+        return None, [], [], False
+    
+    # Determine which graph was clicked
+    ctx_triggered = ctx.triggered_id if hasattr(ctx, "triggered_id") else None
+    click_data = None
+    
+    if ctx_triggered == 'network-graph' and primary_click_data:
+        click_data = primary_click_data
+    elif ctx_triggered == 'state-graph' and state_click_data:
+        click_data = state_click_data
+    
+    if not click_data:
         return None, [], [], False
     
     # Extract element info from click data
     point = click_data['points'][0]
-    if 'customdata' in point and point['customdata']:
+    
+    # For state graph, we need to extract node names from the hovertext or text
+    if ctx_triggered == 'state-graph':
+        # Extract element name from hover text or other available data
+        if 'hovertext' in point and point['hovertext']:
+            # Parse hovertext to extract element name
+            hover_text = point['hovertext']
+            if '<b>' in hover_text and '</b>' in hover_text:
+                element_name = hover_text.split('<b>')[1].split('</b>')[0]
+                # Determine if it's a node or link based on available metadata
+                if element_name in (metadata.get('node_names', []) if metadata else []):
+                    element_category = 'node'
+                    # Get node type from network
+                    if global_state['wn'] and element_name in global_state['wn'].node_name_list:
+                        node = global_state['wn'].get_node(element_name)
+                        element_type = node.node_type
+                    else:
+                        element_type = 'Junction'  # Default
+                else:
+                    element_category = 'link'
+                    # Get link type from network
+                    if global_state['wn'] and element_name in global_state['wn'].link_name_list:
+                        link = global_state['wn'].get_link(element_name)
+                        element_type = link.link_type
+                    else:
+                        element_type = 'Pipe'  # Default
+                
+                current_element = {
+                    'name': element_name,
+                    'category': element_category,
+                    'type': element_type
+                }
+                
+                if element_category == 'node':
+                    return current_element, [element_name], [], True  # Open modal
+                else:  # link
+                    return current_element, [], [element_name], True  # Open modal
+    
+    # Handle primary graph clicks (original logic)
+    elif 'customdata' in point and point['customdata']:
         custom_data = point['customdata']
         element_name = custom_data[0]
         element_type = custom_data[1]
@@ -1021,15 +1183,13 @@ def update_modal_content(current_element, network_loaded):
 # Modal close callback
 @app.callback(
     Output('event-config-modal', 'is_open', allow_duplicate=True),
-    [
-     Input('close-event-modal', 'n_clicks'),
-     Input('cancel-event-btn', 'n_clicks')],
+    Input('cancel-event-btn', 'n_clicks'),
     State('event-config-modal', 'is_open'),
     prevent_initial_call=True
 )
-def close_modal(close_clicks, cancel_clicks, is_open):
-    """Close the modal when close or cancel buttons are clicked."""
-    if close_clicks or cancel_clicks:
+def close_modal(cancel_clicks, is_open):
+    """Close the modal when cancel button is clicked."""
+    if cancel_clicks:
         return False
     return is_open
 
@@ -2187,7 +2347,7 @@ def display_batch_main_area(network_loaded, batch_events, batch_metadata):
                                     {"label": "700px", "value": 700},
                                     {"label": "800px", "value": 800}
                                 ], value=700, id="batch-map-height-select")
-                            ], width=4),
+                            ], width=3),
                             dbc.Col([
                                 dbc.Label("Node Size"),
                                 dbc.Select([
@@ -2195,23 +2355,50 @@ def display_batch_main_area(network_loaded, batch_events, batch_metadata):
                                     {"label": "100%", "value": 1.0},
                                     {"label": "120%", "value": 1.2}
                                 ], value=1.0, id="batch-node-size-select")
-                            ], width=4),
+                            ], width=3),
                             dbc.Col([
                                 dbc.Label("Labels"),
                                 dbc.ButtonGroup([
                                     dbc.Button("Always", id="batch-labels-always-btn", color="primary", size="sm"),
                                     dbc.Button("Hover", id="batch-labels-hover-btn", color="outline-primary", size="sm")
                                 ], className="w-100")
-                            ], width=4)
+                            ], width=3),
+                            dbc.Col([
+                                dbc.Label("View"),
+                                dbc.ButtonGroup([
+                                    dbc.Button("Dual", id="batch-dual-view-btn", color="success", size="sm"),
+                                    dbc.Button("Single", id="batch-single-view-btn", color="outline-success", size="sm")
+                                ], className="w-100")
+                            ], width=3)
                         ])
                     ])
                 ], className="mb-3"),
                 
-                # Network map
-                html.Div(id="batch-network-map-container"),
-                
-                # Color legends
-                html.Div(id="batch-color-legends-container")
+                # Dual plot row
+                dbc.Row([
+                    # Primary Network Map (Pressure/Flow)
+                    dbc.Col([
+                        dbc.Card([
+                            dbc.CardHeader(html.H6("🌊 Pressure & Flow", className="mb-0")),
+                            dbc.CardBody([
+                                html.Div(id="batch-network-map-container"),
+                                html.Div(id="batch-color-legends-container", className="mt-2")
+                            ])
+                        ])
+                    ], width=6, id="batch-primary-map-col"),
+                    
+                    # Secondary State Map
+                    dbc.Col([
+                        dbc.Card([
+                            dbc.CardHeader(html.H6("🔍 Operational States", className="mb-0")),
+                            dbc.CardBody([
+                                html.Div(id="batch-state-map-container"),
+                                dbc.Alert("💧 Demands | ⚠️ Leaks | ❌ Closed", 
+                                        color="light", className="mt-2 small")
+                            ])
+                        ])
+                    ], width=6, id="batch-state-map-col")
+                ])
             ], width=8)
         ]),
         
@@ -2542,10 +2729,11 @@ def update_batch_event_timeline(batch_events, current_time, applied_events):
     except Exception as e:
         return dbc.Alert(f"Error creating timeline: {str(e)}", color="danger")
 
-# Batch network map callback
+# Batch network map callback (dual view)
 @app.callback(
     [Output('batch-network-map-container', 'children'),
-     Output('batch-color-legends-container', 'children')],
+     Output('batch-color-legends-container', 'children'),
+     Output('batch-state-map-container', 'children')],
     [Input('network-loaded', 'data'),
      Input('batch-map-height-select', 'value'),
      Input('batch-node-size-select', 'value'),
@@ -2554,11 +2742,11 @@ def update_batch_event_timeline(batch_events, current_time, applied_events):
      Input('show-labels-always', 'data')],
     prevent_initial_call=True
 )
-def update_batch_network_map(network_loaded, map_height, node_size, current_time, simulation_data, show_labels_always):
-    """Update batch simulation network map."""
+def update_batch_network_maps(network_loaded, map_height, node_size, current_time, simulation_data, show_labels_always):
+    """Update both batch simulation network maps."""
     try:
         if not network_loaded or global_state['wn'] is None:
-            return "", ""
+            return "", "", ""
         
         wn = global_state['wn']
         
@@ -2592,10 +2780,22 @@ def update_batch_network_map(network_loaded, map_height, node_size, current_time
             ], width=6)
         ])
         
-        return map_component, legends
+        # State visualization plot
+        from modules.visualization import create_state_visualization_plot
+        state_fig = create_state_visualization_plot(
+            wn,
+            height=map_height_int,
+            node_size_scale=node_size_float,
+            show_labels_always=show_labels_always
+        )
+        
+        state_component = dcc.Graph(id="batch-state-graph", figure=state_fig)
+        
+        return map_component, legends, state_component
     except Exception as e:
-        print(f"Error in update_batch_network_map: {e}")
-        return dbc.Alert(f"Error updating map: {str(e)}", color="danger"), ""
+        print(f"Error in update_batch_network_maps: {e}")
+        error_alert = dbc.Alert(f"Error updating batch maps: {str(e)}", color="danger")
+        return error_alert, "", error_alert
 
 # Batch simulation results callback
 @app.callback(
