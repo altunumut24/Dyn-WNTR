@@ -459,9 +459,6 @@ def create_interactive_content():
                                     dbc.Button("Dual View", id="dual-view-btn", color="success", size="sm"),
                                     dbc.Button("Single View", id="single-view-btn", color="outline-success", size="sm")
                                 ], className="w-100")
-                            ], width=3),
-                            dbc.Col([
-                                dbc.Button("🧭 Legend", id="legend-btn", color="info", size="sm", className="mt-4")
                             ], width=3)
                         ])
                     ])
