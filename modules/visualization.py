@@ -706,7 +706,7 @@ def create_state_visualization_plot(wn: WaterNetworkModel, height: int = 700,
         
         # Visual styling based on status (professional colors)
         if status == "CLOSED":
-            link_texts.append(f"🚫 {link_name}")
+            link_texts.append(f"❌ {link_name}")
             link_colors.append('#C53030')  # Professional dark red
         else:
             link_texts.append(link_name)
@@ -903,7 +903,7 @@ def create_state_visualization_plot(wn: WaterNetworkModel, height: int = 700,
         legend_elements.append(
             go.Scatter(x=[-999], y=[-999], mode='lines', 
                       line=dict(color='#E53E3E', width=4, dash='5px,5px'),
-                      name='🚫 Closed Link', showlegend=True, visible='legendonly')
+                      name='❌ Closed Link', showlegend=True, visible='legendonly')
         )
     
     # Always show these since they represent the default/normal state

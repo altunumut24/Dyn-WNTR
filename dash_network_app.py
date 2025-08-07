@@ -489,7 +489,7 @@ def create_interactive_content():
                     dbc.CardHeader(html.H5("🎯 Network Operational States", className="mb-0")),
                     dbc.CardBody([
                         html.Div(id="state-map-container"),
-                        dbc.Alert("Shows: 🔵 Active Demands | 🔴 Leaks | 🚫 Closed Links", 
+                        dbc.Alert("Shows: 🔵 Active Demands | 🔴 Leaks | ❌ Closed Links", 
                                 color="light", className="mt-2 small")
                     ])
                 ])
@@ -2391,7 +2391,7 @@ def display_batch_main_area(network_loaded, batch_events, batch_metadata):
                             dbc.CardHeader(html.H6("🎯 Operational States", className="mb-0")),
                             dbc.CardBody([
                                 html.Div(id="batch-state-map-container"),
-                                dbc.Alert("🔵 Demands | 🔴 Leaks | 🚫 Closed", 
+                                dbc.Alert("🔵 Demands | 🔴 Leaks | ❌ Closed", 
                                         color="light", className="mt-2 small")
                             ])
                         ])
