@@ -1019,17 +1019,29 @@ def update_modal_content(current_element, network_loaded):
         return "⚡ Configure Event", error_content, "", "", ""
 
 # Modal close callback
+#@app.callback(
+#    Output('event-config-modal', 'is_open', allow_duplicate=True),
+#    [
+#     Input('close-event-modal', 'n_clicks'),
+#     Input('cancel-event-btn', 'n_clicks')],
+#    State('event-config-modal', 'is_open'),
+#    prevent_initial_call=True
+#)
+#def close_modal(close_clicks, cancel_clicks, is_open):
+#    """Close the modal when close or cancel buttons are clicked."""
+#    if close_clicks or cancel_clicks:
+#        return False
+#    return is_open
+
 @app.callback(
     Output('event-config-modal', 'is_open', allow_duplicate=True),
-    [
-     Input('close-event-modal', 'n_clicks'),
-     Input('cancel-event-btn', 'n_clicks')],
+    Input('cancel-event-btn', 'n_clicks'),
     State('event-config-modal', 'is_open'),
     prevent_initial_call=True
 )
-def close_modal(close_clicks, cancel_clicks, is_open):
-    """Close the modal when close or cancel buttons are clicked."""
-    if close_clicks or cancel_clicks:
+def close_modal(cancel_clicks, is_open):
+    """Close the modal when Cancel is clicked."""
+    if cancel_clicks:
         return False
     return is_open
 
