@@ -461,7 +461,7 @@ class MWNTRInteractiveSimulator(mwntr.sim.WNTRSimulator):
     def set_pump_speed(self, pump_name, speed):
         self.events_history.append((self.get_sim_time(), 'set_pump_speed', (pump_name, speed)))
         pump = self._wn.get_link(pump_name)
-        pump.base_speed = speed
+        pump.speed = speed
         #self.rebuild_hydraulic_model = True
 
     def plot_network(self, title='Water Network Map', node_labels=True, link_labels=True):

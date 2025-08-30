@@ -980,37 +980,92 @@ class Pipe(Link):
 
 
 class Pump(Link):
-    # base and optional attributes used to create a Pump in _from_dict
-    _base_attributes = [
-        "name",
-        "start_node_name",
-        "end_node_name",
-        "pump_type",
-        "pump_curve_name",
-        "power",
-        "base_speed",
-        "speed_pattern_name",
-        "initial_status"
-    ]
-    _optional_attributes = [
-        "initial_setting",
-        "efficiency",
-        "energy_pattern",
-        "energy_price",
-        "vertices",
-        "tag"
-    ]
+    """
+    Pump class, inherited from Link.
 
+    For details about the different subclasses, please see one of the following:
+    :class:`~wntr.network.elements.HeadPump` and :class:`~wntr.network.elements.PowerPump`
+
+    .. rubric:: Constructor
+    
+    This class is intended to be instantiated through the 
+    :class:`~wntr.network.model.WaterNetworkModel.add_pump` method. 
+    Direct creation through the constructor is highly discouraged.
+    
+    Parameters
+    ----------
+    name : string
+        Name of the pump
+    start_node_name : string
+         Name of the start node
+    end_node_name : string
+         Name of the end node
+    wn : :class:`~wntr.network.model.WaterNetworkModel`
+        The water network model this pump will belong to.
+    
+
+    .. rubric:: Attributes
+
+    .. autosummary::
+
+        name
+        link_type
+        start_node
+        start_node_name
+        end_node
+        end_node_name
+        base_speed
+        speed_pattern_name
+        speed_timeseries
+        initial_status
+        initial_setting
+        efficiency
+        energy_price
+        energy_pattern
+        vertices
+        tag
+
+    .. rubric:: Read-only simulation results
+
+    .. autosummary::
+
+        flow
+        headloss
+        velocity
+        quality
+        status
+        setting
+
+    """
+    
+    # base and optional attributes used to create a Pump in _from_dict
+    # base attributes are used in add_pump
+    _base_attributes = ["name",
+                        "start_node_name",
+                        "end_node_name",
+                        "pump_type",
+                        "pump_curve_name",
+                        "power"
+                        "base_speed",
+                        "speed_pattern_name",
+                        "initial_status"]
+    _optional_attributes = ["initial_setting",
+                            "efficiency",
+                            "energy_pattern",
+                            "energy_price",
+                            "vertices",
+                            "tag"]
+    
     def __init__(self, name, start_node_name, end_node_name, wn):
         super(Pump, self).__init__(wn, name, start_node_name, end_node_name)
         self._speed_timeseries = TimeSeries(wn._pattern_reg, 1.0)
         self._base_power = None
         self._pump_curve_name = None
         self._efficiency = None
-        self._energy_price = None
+        self._energy_price = None 
         self._energy_pattern = None
-        self._outage_rule_name = name + '_outage'
-        self._after_outage_rule_name = name + '_after_outage'
+        self._outage_rule_name = name+'_outage'
+        self._after_outage_rule_name = name+'_after_outage'
 
     def _compare(self, other):
         if not super(Pump, self)._compare(other):
@@ -1018,10 +1073,9 @@ class Pump(Link):
         return True
 
     @property
-    def efficiency(self):
+    def efficiency(self): 
         """float : pump efficiency"""
         return self._efficiency
-
     @efficiency.setter
     def efficiency(self, value):
         self._efficiency = value
@@ -1030,7 +1084,6 @@ class Pump(Link):
     def energy_price(self):
         """float : energy price surcharge (only used by EPANET)"""
         return self._energy_price
-
     @energy_price.setter
     def energy_price(self, value):
         self._energy_price = value
@@ -1039,7 +1092,6 @@ class Pump(Link):
     def energy_pattern(self):
         """str : energy pattern name"""
         return self._energy_pattern
-
     @energy_pattern.setter
     def energy_pattern(self, value):
         self._energy_pattern = value
@@ -1066,16 +1118,14 @@ class Pump(Link):
     def base_speed(self):
         """float : base multiplier for a speed timeseries"""
         return self._speed_timeseries.base_value
-
     @base_speed.setter
     def base_speed(self, value):
-        self._speed_timeseries.base_value = 1.0
-
+        self._speed_timeseries.base_value = value
+        
     @property
     def speed_pattern_name(self):
         """str : pattern name for the speed"""
         return self._speed_timeseries.pattern_name
-
     @speed_pattern_name.setter
     def speed_pattern_name(self, name):
         self._pattern_reg.remove_usage(self._speed_timeseries.pattern_name, (self.name, 'Pump'))
@@ -1086,65 +1136,59 @@ class Pump(Link):
     def setting(self):
         """Alias to speed for consistency with other link types"""
         return self._speed_timeseries
-
+    
     def add_outage(self, wn, start_time, end_time=None, priority=6, add_after_outage_rule=False):
+        """
+        Add a pump outage rule to the water network model.
+
+        Parameters
+        ----------
+        model : :class:`~wntr.network.model.WaterNetworkModel`
+            The water network model this outage will belong to.
+        start_time : int
+           The time at which the outage starts.
+        end_time : int
+           The time at which the outage stops.
+        priority : int
+            The outage rule priority, default = 6 (very high)
+        add_after_outage_rule : bool
+            Flag indicating if a rule is added to open the pump after the outage. 
+            Pump status after the outage is generally defined by existing controls/rules in the water network model. 
+            For example, the pump opens based on the level of a specific tank.
+        """
         from mwntr.network.controls import ControlAction, SimTimeCondition, AndCondition, Rule
+
         # Outage
         act = ControlAction(self, 'status', LinkStatus.Closed)
-        cond1 = SimTimeCondition(wn, 'Above', start_time)
+        cond1 = SimTimeCondition(wn, 'Above' , start_time)
         if end_time is not None:
-            cond2 = SimTimeCondition(wn, 'Below', end_time)
+            cond2 = SimTimeCondition(wn, 'Below' , end_time)
             cond = AndCondition(cond1, cond2)
         else:
             cond = cond1
         rule = Rule(cond, act, priority=priority)
         wn.add_control(self._outage_rule_name, rule)
+        
         # After outage
         if add_after_outage_rule and end_time is not None:
-            act2 = ControlAction(self, 'status', LinkStatus.Open)
-            cond_after = SimTimeCondition(wn, 'Above', end_time)
-            rule2 = Rule(cond_after, act2, priority=priority)
-            wn.add_control(self._after_outage_rule_name, rule2)
+            act = ControlAction(self, 'status', LinkStatus.Open)
+            cond = SimTimeCondition(wn, 'Above' , end_time)
+            rule = Rule(cond, act, priority=priority)
+            wn.add_control(self._after_outage_rule_name, rule)
 
-    def remove_outage(self, wn):
+    def remove_outage(self,wn):
+        """
+        Remove an outage control from the water network model
+
+        Parameters
+        ----------
+        wn : :class:`~wntr.network.model.WaterNetworkModel`
+           Water network model
+        """
+        
         wn._discard_control(self._outage_rule_name)
         wn._discard_control(self._after_outage_rule_name)
-
-    @property
-    def speed(self):
-        """Alias for base_speed."""
-        return self.base_speed
-
-    @speed.setter
-    def speed(self, value):
-        """
-        Keep base_speed == 1.0 (so the simulator never errors),
-        but warp the pump’s head–flow curve by 'value'.
-        """
-        factor = float(value)
-        # 1) Keep the engine-happy speed at 1.0
-        self._speed_timeseries.base_value = 1.0
-        # 2) Fetch the current curve
-        curve_name = self._pump_curve_name
-        if curve_name is None:
-            raise RuntimeError(f"No curve defined for pump {self.name!r}")
-        curve = self._curve_reg[curve_name]
-        # 3) Multiply every head point by the speed factor
-        orig_pts = curve.points if hasattr(curve, 'points') else []
-        curve.points = [(q, h * factor) for q, h in orig_pts]
-
-    @property
-    def head_curve(self):
-        """Alias for pump_curve_name so that set_pump_head_curve events work."""
-        return self._pump_curve_name
-
-    @head_curve.setter
-    def head_curve(self, name):
-        # unregister old
-        self._curve_reg.remove_usage(self._pump_curve_name, (self.name, 'Pump'))
-        # register new
-        self._curve_reg.add_usage(name, (self.name, 'Pump'))
-        self._pump_curve_name = name
+        
 
 class HeadPump(Pump):    
     """

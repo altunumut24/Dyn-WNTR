@@ -948,8 +948,8 @@ def create_state_visualization_plot(wn: WaterNetworkModel, height: int = 700,
             showgrid=False,
             zeroline=False,
             showticklabels=False,
-            scaleanchor="y",
-            scaleratio=1
+            #scaleanchor="y",
+            #scaleratio=1
         ),
         yaxis=dict(
             showgrid=False,

@@ -270,7 +270,7 @@ def create_network_file_selector():
                     {"label": "NET_2.inp - Large Distribution Network", "value": "NET_2.inp"},
                     {"label": "NET_3.inp - Medium Distribution Network", "value": "NET_3.inp"},
                     {"label": "NET_4.inp - Sample Distribution Network", "value": "NET_4.inp"},
-                    {"label": "GRID.inp - Custom Grid Network", "value": "custom_wdn.inp"}
+                    {"label": "GRID.inp - Custom Grid Network", "value": "custom_wdn_pump.inp"}
                 ], value="NET_4.inp", id="example-network-select")
             ], id="example-networks-div"),
             
