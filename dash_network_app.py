@@ -213,6 +213,8 @@ def create_layout():
             "right": "2rem",
             "zIndex": 1050
         }),
+
+        create_event_configuration_modal(),
         
         # Hidden monitoring dropdowns for automatic selection
         html.Div([
@@ -545,7 +547,7 @@ def create_interactive_content():
         html.Div(id="simulation-results-container"),
         
         # Event configuration modal
-        create_event_configuration_modal()
+        # create_event_configuration_modal()
     ]
     
     return [
