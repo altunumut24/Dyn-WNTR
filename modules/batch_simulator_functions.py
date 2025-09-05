@@ -40,7 +40,7 @@ import numpy as np
 import json
 
 # Import WNTR components
-from mwntr.sim.interactive_network_simulator import MWNTRInteractiveSimulator
+from mwntr.sim.interactive_network_simulator import InteractiveWNTRSimulator
 from mwntr.network import WaterNetworkModel, Node, Link, LinkStatus
 from mwntr.network.elements import Junction, Tank, Reservoir, Pipe, Pump, Valve
 
@@ -153,7 +153,7 @@ def display_event_timeline(events: List[Dict[str, Any]], current_time: float):
     
     st.plotly_chart(fig, use_container_width=True)
 
-def apply_event_to_batch_simulator(sim: MWNTRInteractiveSimulator, wn: WaterNetworkModel, event: Dict):
+def apply_event_to_batch_simulator(sim: InteractiveWNTRSimulator, wn: WaterNetworkModel, event: Dict):
     """
     Apply a single event to the batch simulator.
     
@@ -162,7 +162,7 @@ def apply_event_to_batch_simulator(sim: MWNTRInteractiveSimulator, wn: WaterNetw
     and provides error handling with detailed feedback.
     
     Args:
-        sim (MWNTRInteractiveSimulator): The WNTR simulator instance
+        sim (InteractiveWNTRSimulator): The WNTR simulator instance
         wn (WaterNetworkModel): The water network model
         event (Dict): Event dictionary with type, element, and parameters
         
@@ -231,7 +231,7 @@ def get_pending_events(events: List[Dict[str, Any]], current_time: float) -> Lis
     """Get events that should be applied at the current time."""
     return [e for e in events if e['time'] <= current_time and not e.get('applied', False)]
 
-def batch_simulation_step(sim: MWNTRInteractiveSimulator, wn: WaterNetworkModel, 
+def batch_simulation_step(sim: InteractiveWNTRSimulator, wn: WaterNetworkModel, 
                          events: List[Dict[str, Any]], current_time: float,
                          timestep: int = 60) -> Tuple[bool, float, str, List[Dict[str, Any]]]:
     """Run one step of batch simulation with event application."""

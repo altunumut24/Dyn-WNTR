@@ -3,7 +3,7 @@ import sys
 import time
 import mwntr
 
-from mwntr.sim.interactive_network_simulator import MWNTRInteractiveSimulator
+from mwntr.sim.interactive_network_simulator import InteractiveWNTRSimulator
 
 def create_water_network_model():
     # 1. Create a new water network model
@@ -134,10 +134,10 @@ def main():
     global_timestep = 5
 
     wn = mwntr.network.WaterNetworkModel('NET_4.inp')
-    wn.add_pattern('house1_pattern', MWNTRInteractiveSimulator.expand_pattern_to_simulation_duration([1,5,1], global_timestep, simulation_duration=one_day_in_seconds))
-    wn.add_pattern('ptn_1', MWNTRInteractiveSimulator.expand_pattern_to_simulation_duration([1,3,5,3,1], global_timestep, simulation_duration=one_day_in_seconds))
+    wn.add_pattern('house1_pattern', InteractiveWNTRSimulator.expand_pattern_to_simulation_duration([1,5,1], global_timestep, simulation_duration=one_day_in_seconds))
+    wn.add_pattern('ptn_1', InteractiveWNTRSimulator.expand_pattern_to_simulation_duration([1,3,5,3,1], global_timestep, simulation_duration=one_day_in_seconds))
         
-    sim = MWNTRInteractiveSimulator(wn)
+    sim = InteractiveWNTRSimulator(wn)
     sim.init_simulation(duration=one_day_in_seconds, global_timestep=global_timestep)
 
     

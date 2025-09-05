@@ -33,7 +33,7 @@ from typing import List, Dict, Any, Optional
 
 # Import WNTR components
 from mwntr.network import WaterNetworkModel
-from mwntr.sim.interactive_network_simulator import MWNTRInteractiveSimulator
+from mwntr.sim.interactive_network_simulator import InteractiveWNTRSimulator
 
 # Import our configuration and simulation functions
 from .config import NODE_EVENTS, LINK_EVENTS, DEFAULT_MONITORED_NODES_COUNT, DEFAULT_MONITORED_LINKS_COUNT
@@ -93,7 +93,7 @@ def display_network_status(wn: WaterNetworkModel, current_element: Optional[Dict
     st.markdown("---")
 
 
-def display_simulation_controls(sim: MWNTRInteractiveSimulator, current_sim_time: float, key_prefix: str = "") -> str:
+def display_simulation_controls(sim: InteractiveWNTRSimulator, current_sim_time: float, key_prefix: str = "") -> str:
     """
     Display simulation control buttons and status indicator.
     
@@ -103,7 +103,7 @@ def display_simulation_controls(sim: MWNTRInteractiveSimulator, current_sim_time
     - Reset simulation back to initial state
     
     Args:
-        sim (MWNTRInteractiveSimulator): The WNTR simulator instance
+        sim (InteractiveWNTRSimulator): The WNTR simulator instance
         current_sim_time (float): Current simulation time in seconds
         key_prefix (str): Prefix for button keys (for multiple instances)
         

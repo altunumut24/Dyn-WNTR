@@ -1,12 +1,10 @@
 import json
 import math
 import os
-import time
 from uuid import uuid4
 from matplotlib import pyplot as plt
 import numpy as np
 import pandas as pd
-from sympy import Q
 import mwntr
 from mwntr.network.controls import _ControlType
 import mwntr.sim.hydraulics
@@ -26,7 +24,7 @@ from mwntr.sim.core import _Diagnostics, _ValveSourceChecker, _solver_helper
 logger = logging.getLogger(__name__)
 #logger.setLevel(logging.DEBUG)
 
-class MWNTRInteractiveSimulator(mwntr.sim.WNTRSimulator):
+class InteractiveWNTRSimulator(mwntr.sim.WNTRSimulator):
     def __init__(self, wn: WaterNetworkModel):
         super().__init__(wn)
         self.initialized_simulation = False
@@ -122,8 +120,6 @@ class MWNTRInteractiveSimulator(mwntr.sim.WNTRSimulator):
 
         self.last_set_results_time = -1
         
-        #self._wn.add_pattern('interactive_pattern', MWNTRInteractiveSimulator.expand_pattern_to_simulation_duration([1]))
-
         self.rebuild_hydraulic_model = False
         self.demand_modifications = []
         self.tank_head_modifications = []
@@ -141,7 +137,7 @@ class MWNTRInteractiveSimulator(mwntr.sim.WNTRSimulator):
             if v == 0:
                 self.node_res['satisfied_demand'][node_name].append(1)
             else:
-                self.node_res['satisfied_demand'][node_name].append(self.node_res['demand'][node_name][-1] / v)
+                self.node_res['satisfied_demand'][node_name].append(min(1.0, self.node_res['demand'][node_name][-1] / v))
         
         for node_name, node in self._wn.reservoirs():
             self.node_res['expected_demand'][node_name].append(0.0)
@@ -210,11 +206,13 @@ class MWNTRInteractiveSimulator(mwntr.sim.WNTRSimulator):
         self._run_postsolve_controls()
         self._run_feasibility_controls()
         if self._change_tracker.changes_made(ref_point='graph'):
+            print("Changes made by postsolve controls")
             self.resolve = True
             self._update_internal_graph()
             mwntr.sim.hydraulics.update_model_for_controls(self._model, self._wn, self._model_updater, self._change_tracker)
             self.diagnostics.run(last_step='postsolve controls and model updates', next_step='solve next trial')
             self.trial += 1
+
             if self.trial > self.max_trials:
                 if self._convergence_error:
                     logger.error('Exceeded maximum number of trials at time ' + self._get_time() + '. ') 
@@ -224,10 +222,13 @@ class MWNTRInteractiveSimulator(mwntr.sim.WNTRSimulator):
                 logger.warning('Exceeded maximum number of trials at time ' + self._get_time() + '. ' ) 
                 self._terminated = True
                 #self._set_results(self._wn, self.results, self.node_res, self.link_res)
+                #self._save_expected_demand()
                 return
             self._terminated = False
             #self._set_results(self._wn, self.results, self.node_res, self.link_res)
+            #self._save_expected_demand()
             return
+
 
         self.diagnostics.run(last_step='postsolve controls and model updates', next_step='advance time')
 
@@ -235,6 +236,9 @@ class MWNTRInteractiveSimulator(mwntr.sim.WNTRSimulator):
 
         self.resolve = False
         if isinstance(self._report_timestep, (float, int)):
+            
+            print(f"Report timestep: {self._report_timestep}, sim_time: {self._wn.sim_time}, mod: {self._wn.sim_time % self._report_timestep}")
+
             if self._wn.sim_time % self._report_timestep == 0:
                 mwntr.sim.hydraulics.save_results(self._wn, self.node_res, self.link_res)
                 self._save_expected_demand()
@@ -256,8 +260,8 @@ class MWNTRInteractiveSimulator(mwntr.sim.WNTRSimulator):
         mwntr.sim.hydraulics.update_network_previous_values(self._wn)
         
         self._wn.sim_time += self._hydraulic_timestep
-        #overstep = float(self._wn.sim_time) % self._hydraulic_timestep
-        #self._wn.sim_time -= overstep
+        next_slot = int(round(self._wn.sim_time / self._hydraulic_timestep))
+        self._wn.sim_time = next_slot * self._hydraulic_timestep
 
         if len(self.demand_modifications) > 0:
             self._apply_demand_modifications()
@@ -280,6 +284,7 @@ class MWNTRInteractiveSimulator(mwntr.sim.WNTRSimulator):
         
         if self._wn.sim_time > self._wn.options.time.duration:
             self._terminated = True
+        
         return
         
     def full_run_sim(self):
@@ -292,32 +297,6 @@ class MWNTRInteractiveSimulator(mwntr.sim.WNTRSimulator):
     def is_terminated(self):
         return self._terminated
     
-    def _set_results_old(self):
-        """
-        Parameters
-        ----------
-        wn: mwntr.network.WaterNetworkModel
-        results: mwntr.sim.results.SimulationResults
-        node_res: OrderedDict
-        link_res: OrderedDict
-        """
-        node_names = self._wn.junction_name_list + self._wn.tank_name_list + self._wn.reservoir_name_list
-        link_names = self._wn.pipe_name_list + self._wn.head_pump_name_list + self._wn.power_pump_name_list + self._wn.valve_name_list
-
-        self.last_set_results_time = self._wn.sim_time
-
-        self.results.node = {}
-        self.results.link = {}
-
-        for key, _ in self.node_res.items():
-            data = [self.node_res[key][name] for name in node_names]
-            self.results.node[key] = pd.DataFrame(data=np.array(data).transpose(), index=self.results.time,
-                                        columns=node_names)
-
-        for key, _ in self.link_res.items():
-            self.results.link[key] = pd.DataFrame(data=np.array([self.link_res[key][name] for name in link_names]).transpose(), index=self.results.time,
-                                                columns=link_names)
-
     def _set_results(self):
         """
         Ensures all missing timesteps between the last recorded timestep and the current simulation time
@@ -331,7 +310,10 @@ class MWNTRInteractiveSimulator(mwntr.sim.WNTRSimulator):
 
         missing_times = [t for t in self.results.time[self._timestep_index:] if last_set_results_time <= t <= now]
 
+        #print(self.results.node)
+        #print(self.results.link)
         if not missing_times:
+            print("No missing times")
             return 
 
         for key in self.node_res.keys():
@@ -341,8 +323,10 @@ class MWNTRInteractiveSimulator(mwntr.sim.WNTRSimulator):
                 self.results.node[key] = pd.concat([self.results.node[key], new_rows])
             else:
                 self.results.node[key] = new_rows
+            #print(self.results.node[key])
 
         # Fill in missing link values
+
         for key in self.link_res.keys():
             new_data = np.array([self.link_res[key][name][self._timestep_index:] for name in link_names])
             new_rows = pd.DataFrame(new_data.transpose(), index=missing_times, columns=link_names)
@@ -350,6 +334,7 @@ class MWNTRInteractiveSimulator(mwntr.sim.WNTRSimulator):
                 self.results.link[key] = pd.concat([self.results.link[key], new_rows])
             else:
                 self.results.link[key] = new_rows
+            #print(self.results.link[key])
 
         self._timestep_index = len(self.results.time)
         self.last_set_results_time = now
@@ -393,19 +378,21 @@ class MWNTRInteractiveSimulator(mwntr.sim.WNTRSimulator):
     def _close_link(self, link_name) -> None:
         link = self._wn.get_link(link_name)
         c1 = mwntr.network.controls.ControlAction(link, "status", LinkStatus.Closed)
-        condition = mwntr.network.controls.SimTimeCondition(self._wn, "=", self.get_sim_time() + self.hydraulic_timestep())
+        condition = mwntr.network.controls.SimTimeCondition(self._wn, "=", self.get_sim_time())
         c = mwntr.network.controls.Control(condition=condition, then_action=c1) 
         self._add_control(c)
         self._register_controls_with_observers()
+        link.initial_status = LinkStatus.Closed
         self.rebuild_hydraulic_model = True
 
     def _open_link(self, link_name):
         link = self._wn.get_link(link_name)
         c1 = mwntr.network.controls.ControlAction(link, "status", LinkStatus.Open)
-        condition = mwntr.network.controls.SimTimeCondition(self._wn, "=", self.get_sim_time()  + self.hydraulic_timestep())
+        condition = mwntr.network.controls.SimTimeCondition(self._wn, "=", self.get_sim_time())
         c = mwntr.network.controls.Control(condition=condition, then_action=c1)
         self._add_control(c)
         self._register_controls_with_observers()
+        link.initial_status = LinkStatus.Open
         self.rebuild_hydraulic_model = True
 
     def close_pipe(self, pipe_name) -> None:
@@ -464,8 +451,8 @@ class MWNTRInteractiveSimulator(mwntr.sim.WNTRSimulator):
         pump.speed = speed
         self.rebuild_hydraulic_model = True
 
-    def plot_network(self, title='Water Network Map', node_labels=True, link_labels=True):
-        mwntr.graphics.plot_interactive_network(self._wn, title=f"{title} - {self._sim_id}", node_labels=node_labels, link_labels=link_labels)    
+    def plot_network(self, title='Water Network Map', node_labels=True, link_labels=True, figsize=[1920, 1080]):
+        mwntr.graphics.plot_interactive_network(self._wn, title=f"{title} - {self._sim_id}", node_labels=node_labels, link_labels=link_labels, figsize=figsize)
 
     def _create_base_figure(self, node_positions, edge_list, node_color_0, edge_color_0,
                         node_hover_0, edge_hover_0, edge_names, node_key, link_key, node_max_value, node_min_value, link_min_value, link_max_value, node_labels=True, link_labels=True):
@@ -854,6 +841,7 @@ class MWNTRInteractiveSimulator(mwntr.sim.WNTRSimulator):
                     if ts.pattern_name == name:
                         node.demand_timeseries_list.remove(ts)
         self.demand_modifications.clear()
+        self.rebuild_hydraulic_model = True
 
     def start_outage(self, pump_list=None):
         if pump_list is None:
@@ -1040,6 +1028,8 @@ class MWNTRInteractiveSimulator(mwntr.sim.WNTRSimulator):
 
     def extract_snapshot(self, filename=None):
 
+        results = self.get_results()  # Ensure results are up to date
+
         nodes = self._wn.nodes._data.values()
         edges = self._wn.links._data.values()
 
@@ -1049,16 +1039,17 @@ class MWNTRInteractiveSimulator(mwntr.sim.WNTRSimulator):
             'edges': {},
         }
 
-        type_map = {
-            'Junction':  [1, 0, 0, 0, 0, 0],
-            'Tank':      [0, 1, 0, 0, 0, 0],
-            'Reservoir': [0, 0, 1, 0, 0, 0],
-            'Pipe':      [0, 0, 0, 1, 0, 0],
-            'Pump':      [0, 0, 0, 0, 1, 0],
-            'Valve':     [0, 0, 0, 0, 0, 1],
+        node_type_map = {
+            'Junction':  [1, 0, 0],
+            'Tank':      [0, 1, 0],
+            'Reservoir': [0, 0, 1],
         }
-
         
+        edge_type_map = {
+            'Pipe':      [1, 0, 0],
+            'Pump':      [0, 1, 0],
+            'Valve':     [0, 0, 1],
+        }
 
         nodes_features = ['demand', 'elevation', 'head', 'leak_status', 'leak_area',
                         'leak_discharge_coeff', 'leak_demand', 'pressure', 'diameter',
@@ -1090,7 +1081,10 @@ class MWNTRInteractiveSimulator(mwntr.sim.WNTRSimulator):
                 node_data['setting'] = -1
                 node_data['has_setting'] = 0
             
-            node_data['node_type'] = type_map[n.node_type]
+            node_data['expected_demand'] = results.node['expected_demand'][n.name].iloc[-1] 
+            node_data['satisfied_demand'] = results.node['satisfied_demand'][n.name].iloc[-1]
+            
+            node_data['node_type'] = node_type_map[n.node_type]
 
             snapshot['nodes'][n.name] = node_data
 
@@ -1128,7 +1122,7 @@ class MWNTRInteractiveSimulator(mwntr.sim.WNTRSimulator):
                 edge_data['status'] = 1
             
 
-            edge_data['link_type'] = type_map[l.link_type]  
+            edge_data['link_type'] = edge_type_map[l.link_type]  
             edge_data['start'] = l.start_node_name
             edge_data['end'] = l.end_node_name
 
@@ -1140,7 +1134,6 @@ class MWNTRInteractiveSimulator(mwntr.sim.WNTRSimulator):
 
         return snapshot
 
-        #def _set_active_valve(self, valve):
 
     def _calculate_b1(self):
         nodes = self._wn.node_name_list
@@ -1211,10 +1204,14 @@ class MWNTRInteractiveSimulator(mwntr.sim.WNTRSimulator):
         max_error = np.max(np.abs(conservation))
         print(f"Max imbalance at any node: {max_error}")
 
-
     def dump_results_to_csv(self):
         results = self.get_results()
+        nodes = self._wn.node_name_list
+        links = self._wn.link_name_list
+
+        # Create a directory for the results if it doesn't exist
         os.makedirs(f"results/{self._sim_id}", exist_ok=True)
+
         for key in results.node.keys():
             results.node[key].to_csv(f"results/{self._sim_id}/{self._sim_id}_{key}_nodes.csv", index=True)
         for key in results.link.keys():

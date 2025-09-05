@@ -26,7 +26,7 @@ from typing import List, Dict, Any, Optional, Tuple
 import streamlit as st
 
 # Import WNTR components for water network simulation
-from mwntr.sim.interactive_network_simulator import MWNTRInteractiveSimulator
+from mwntr.sim.interactive_network_simulator import InteractiveWNTRSimulator
 from mwntr.network import WaterNetworkModel
 
 # Import our configuration settings
@@ -83,7 +83,7 @@ def load_network_model(inp_file: str) -> Optional[WaterNetworkModel]:
         return None
 
 
-def apply_event_to_simulator(sim: MWNTRInteractiveSimulator, wn: WaterNetworkModel, event: Dict) -> Tuple[bool, str]:
+def apply_event_to_simulator(sim: InteractiveWNTRSimulator, wn: WaterNetworkModel, event: Dict) -> Tuple[bool, str]:
     """
     Apply a scheduled event to the network simulation.
     
@@ -91,7 +91,7 @@ def apply_event_to_simulator(sim: MWNTRInteractiveSimulator, wn: WaterNetworkMod
     to the network model. Events change the network behavior during simulation.
     
     Args:
-        sim (MWNTRInteractiveSimulator): The simulation engine
+        sim (InteractiveWNTRSimulator): The simulation engine
         wn (WaterNetworkModel): The network model to modify
         event (Dict): Event dictionary containing:
             - element_name: Which network element to affect
@@ -219,7 +219,10 @@ def apply_event_to_simulator(sim: MWNTRInteractiveSimulator, wn: WaterNetworkMod
         return False, f"Error applying event: {str(e)}"
 
 
-def run_simulation_step(sim: MWNTRInteractiveSimulator, wn: WaterNetworkModel) -> Tuple[bool, float, str]:
+from .rl.agents.dqn_agent import DQNAgent
+from .rl.envs.wdn_env import WDNEnv
+
+def run_simulation_step(sim: InteractiveWNTRSimulator, wn: WaterNetworkModel, agent: DQNAgent, env: WDNEnv, state, edge_feats) -> Tuple[bool, float, str]:
     """
     Execute one time step of the hydraulic simulation.
     
@@ -231,7 +234,7 @@ def run_simulation_step(sim: MWNTRInteractiveSimulator, wn: WaterNetworkModel) -
     5. Returns success status and current simulation time
     
     Args:
-        sim (MWNTRInteractiveSimulator): The simulation engine
+        sim (InteractiveWNTRSimulator): The simulation engine
         wn (WaterNetworkModel): The network model to update
         
     Returns:
@@ -248,8 +251,14 @@ def run_simulation_step(sim: MWNTRInteractiveSimulator, wn: WaterNetworkModel) -
             return False, sim.get_sim_time(), "Simulation terminated"
         
         # Execute the next hydraulic timestep (this is where WNTR does the math)
-        sim.step_sim()
+        #sim.step_sim()
+
+        # Integrate with RL agent
+        action = agent.act(state, edge_feats, eps=1)
+        info = env.step(action)
+        (next_state, next_edge_feats), reward, done = info.observation, info.reward, info.done
         
+
         # Get current simulation time
         current_time = sim.get_sim_time()
         
@@ -280,11 +289,12 @@ def run_simulation_step(sim: MWNTRInteractiveSimulator, wn: WaterNetworkModel) -
                         link.flow = flow_data.loc[current_time_step, link_name]
         
         # Return success with formatted time message
-        return True, current_time, f"Simulation step completed at {datetime.timedelta(seconds=int(current_time))}"
+        return True, current_time, f"Simulation step completed at {datetime.timedelta(seconds=int(current_time))}", next_state, next_edge_feats, reward
         
     except Exception as e:
         # Something went wrong during simulation step
-        return False, sim.get_sim_time(), f"Simulation error: {str(e)}"
+        print(e)
+        return False, sim.get_sim_time(), f"Simulation error: {str(e)}", state, edge_feats, reward
 
 
 def load_events_from_json(uploaded_file) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
@@ -540,7 +550,7 @@ def initialize_simulation_data() -> Dict[str, Any]:
     }
 
 
-def reset_simulation_state(wn: WaterNetworkModel) -> MWNTRInteractiveSimulator:
+def reset_simulation_state(wn: WaterNetworkModel) -> InteractiveWNTRSimulator:
     """
     Reset the simulation by creating a fresh simulator instance.
     
@@ -552,11 +562,11 @@ def reset_simulation_state(wn: WaterNetworkModel) -> MWNTRInteractiveSimulator:
         wn (WaterNetworkModel): The network model to reset
         
     Returns:
-        MWNTRInteractiveSimulator: Fresh simulator instance
+        InteractiveWNTRSimulator: Fresh simulator instance
         
     Reset behavior:
     - Undoes all events and changes from previous simulations
     - Returns the network to its original state
     - Necessary when starting a new simulation scenario
     """
-    return MWNTRInteractiveSimulator(wn) 
+    return InteractiveWNTRSimulator(wn) 

@@ -49,6 +49,9 @@ from modules.visualization import (
     display_event_timeline, create_monitoring_charts
 )
 
+from modules.rl.envs.wdn_env import WDNEnv
+from modules.rl.agents.dqn_agent import DQNAgent
+
 def create_simple_monitoring_chart(elements, selected_elements, chart_type="pressure", sim_data=None):
     """Create monitoring chart with selected elements - from plotly_restyle_test.py"""
     import plotly.graph_objects as go
@@ -272,7 +275,8 @@ def create_network_file_selector():
                     {"label": "NET_2.inp - Large Distribution Network", "value": "NET_2.inp"},
                     {"label": "NET_3.inp - Medium Distribution Network", "value": "NET_3.inp"},
                     {"label": "NET_4.inp - Sample Distribution Network", "value": "NET_4.inp"},
-                    {"label": "GRID.inp - Custom Grid Network", "value": "custom_wdn_pump.inp"}
+                    {"label": "GRID.inp - Custom Grid Network", "value": "custom_wdn.inp"},
+                    {"label": "LTOWN.inp - Custom Grid Network", "value": "L-TOWN_Real.inp"}
                 ], value="NET_4.inp", id="example-network-select")
             ], id="example-networks-div"),
             
@@ -558,7 +562,7 @@ def create_interactive_content():
         ]),
         html.Div(id="interactive-main-area", style={'display': 'none'}, children=interactive_main_content),
         # Interval for auto-stepping when Play is active
-        dcc.Interval(id="interactive-play-interval", interval=1000, n_intervals=0, disabled=True)
+        dcc.Interval(id="interactive-play-interval", interval=5000, n_intervals=0, disabled=True)
     ]
 
 def create_batch_content():
@@ -833,9 +837,21 @@ def load_network_callback(n_clicks, source, example_file, upload_contents, uploa
             global_state['network_file_path'] = file_path
             
             # Create simulator instance
-            from mwntr.sim.interactive_network_simulator import MWNTRInteractiveSimulator
-            global_state['sim'] = MWNTRInteractiveSimulator(wn)
+            from mwntr.sim.interactive_network_simulator import InteractiveWNTRSimulator
+
+
+            env = WDNEnv(base_wn=wn,
+                 normalize_reward=True,
+                 double_dqn=True, 
+                 simulation_duration=6 * 3600)  # 6 hours in seconds
             
+            agent = env.agent
+
+            global_state['env'] = env
+            global_state['agent'] = agent
+            global_state['sim'] = env.simulation
+            global_state['wn'] = env.simulation._wn
+
             # Create metadata for storage
             metadata = {
                 'file_path': file_display_name,
@@ -983,10 +999,10 @@ def update_network_maps(network_loaded, map_height, node_size,
                       selected_nodes, selected_links, sim_initialized, simulation_data, current_time, show_labels_always):
     """Update both network map visualizations."""
     try:
-        if not network_loaded or global_state['wn'] is None:
+        if not network_loaded or global_state['env'] is None:
             return "", "", ""
         
-        wn = global_state['wn']
+        wn = global_state['env'].simulation._wn
         show_sim_data = sim_initialized or False
         
         # Create network plot using existing visualization module
@@ -1072,6 +1088,8 @@ def handle_map_clicks(primary_click_data, state_click_data, network_loaded, meta
     # Extract element info from click data
     point = click_data['points'][0]
     
+    wn = global_state['env'].simulation._wn
+
     # For state graph, we need to extract node names from the hovertext or text
     if ctx_triggered == 'state-graph':
         # Extract element name from hover text or other available data
@@ -1084,16 +1102,16 @@ def handle_map_clicks(primary_click_data, state_click_data, network_loaded, meta
                 if element_name in (metadata.get('node_names', []) if metadata else []):
                     element_category = 'node'
                     # Get node type from network
-                    if global_state['wn'] and element_name in global_state['wn'].node_name_list:
-                        node = global_state['wn'].get_node(element_name)
+                    if wn and element_name in wn.node_name_list:
+                        node = wn.get_node(element_name)
                         element_type = node.node_type
                     else:
                         element_type = 'Junction'  # Default
                 else:
                     element_category = 'link'
                     # Get link type from network
-                    if global_state['wn'] and element_name in global_state['wn'].link_name_list:
-                        link = global_state['wn'].get_link(element_name)
+                    if wn and element_name in wn.link_name_list:
+                        link = wn.get_link(element_name)
                         element_type = link.link_type
                     else:
                         element_type = 'Pipe'  # Default
@@ -1142,14 +1160,14 @@ def handle_map_clicks(primary_click_data, state_click_data, network_loaded, meta
 )
 def update_modal_content(current_element, network_loaded):
     """Update modal content when an element is selected."""
-    if not network_loaded or not current_element or global_state['wn'] is None:
+    wn = global_state['env'].simulation._wn if global_state.get('env') else None
+    if not network_loaded or not current_element or wn is None:
         return "⚡ Configure Event", "", "", "", ""
     
     try:
         from modules.dash_ui_components import (create_element_properties_display, 
                                               create_event_configuration_form)
         
-        wn = global_state['wn']
         element_name = current_element['name']
         element_type = current_element['type']
         element_category = current_element['category']
@@ -1204,11 +1222,11 @@ def close_modal(cancel_clicks, is_open):
 )
 def handle_simulation_initialize(n_clicks, duration_hours, timestep_minutes, network_loaded, current_status):
     """Handle simulation initialize button."""
-    if not n_clicks or not network_loaded or global_state['sim'] is None:
+    if not n_clicks or not network_loaded or global_state['env'].simulation is None:
         return current_status or False, dbc.Alert("🟡 No network loaded", color="warning"), 24, 60
     
     try:
-        sim = global_state['sim']
+        sim = global_state['env'].simulation
         
         # Initialize simulation
         duration_hours = int(duration_hours or 24)
@@ -1232,10 +1250,26 @@ def handle_simulation_initialize(n_clicks, duration_hours, timestep_minutes, net
         
         print(f"Initializing simulation for {duration_seconds} hours with {timestep_seconds} minutes timestep.")
         
+        env = global_state['env']
+        state, edge_feats = env.reset(global_timestep=timestep_seconds, duration=duration_seconds)
+
+        global_state['rl_state'] = state
+        global_state['rl_edge_feats'] = edge_feats
+        agent = env.agent
+        agent.reset_episode()
+
+        sim = env.simulation
+        global_state['agent'] = agent
+
         sim.init_simulation(
             global_timestep=timestep_seconds,
             duration=duration_seconds
         )
+        
+        global_state['wn'] = env.simulation._wn 
+        global_state['total_reward'] = 0
+
+        print("Simulation initialized successfully.", sim)
         
         status = dbc.Alert("🟢 Simulation Initialized Successfully!", color="success")
         return True, status, duration_hours, timestep_minutes
@@ -1260,7 +1294,8 @@ def handle_simulation_initialize(n_clicks, duration_hours, timestep_minutes, net
 )
 def handle_simulation_reset(n_clicks, network_loaded):
     """Handle simulation reset button."""
-    if not n_clicks or not network_loaded or global_state['wn'] is None:
+
+    if not n_clicks or not network_loaded:
         return no_update, no_update, no_update, no_update, no_update, no_update
     
     try:
@@ -1268,16 +1303,26 @@ def handle_simulation_reset(n_clicks, network_loaded):
         from modules.simulation import reset_simulation_state, initialize_simulation_data
         import copy
         # Restore the pristine network if available, otherwise reload from file if possible
-        if 'original_wn' in global_state:
-            global_state['wn'] = copy.deepcopy(global_state['original_wn'])
-        elif 'network_file_path' in global_state:
-            from modules.simulation import load_network_model
-            try:
-                global_state['wn'] = load_network_model(global_state['network_file_path'])
-            except Exception:
-                pass  # Fall back to existing wn if reload fails
+        #if 'original_wn' in global_state:
+        #    wn = copy.deepcopy(global_state['original_wn'])
+        #elif 'network_file_path' in global_state:
+        #    from modules.simulation import load_network_model
+        #    try:
+        #        wn = load_network_model(global_state['network_file_path'])
+        #    except Exception:
+        #        pass  # Fall back to existing wn if reload fails
 
-        global_state['sim'] = reset_simulation_state(global_state['wn'])
+        
+        env = global_state['env']
+        state, edge_feats = env.reset()
+        agent = env.agent
+        agent.reset_episode()
+
+        global_state['rl_state'] = state
+        global_state['rl_edge_feats'] = edge_feats
+        global_state['total_reward'] = 0
+        global_state['wn'] = env.simulation._wn
+        global_state['agent'] = agent
         
         status = dbc.Alert("🔄 Simulation Reset Complete!", color="info")
         return False, status, 0, initialize_simulation_data(), [], []
@@ -1310,17 +1355,19 @@ def handle_simulation_step(step_clicks, play_intervals, sim_initialized, current
     triggered_id = ctx.triggered_id if hasattr(ctx, "triggered_id") else None
 
     # valid triggers: manual step or interval tick
-    if triggered_id not in ["step-btn", "interactive-play-interval"] or not sim_initialized or global_state['sim'] is None:
+    if triggered_id not in ["step-btn", "interactive-play-interval"] or not sim_initialized or global_state['env'].simulation is None:
         return no_update, no_update, no_update, no_update, no_update
 
     step_multiplier = 1  # always single step per trigger
  
     try:
-        from modules.simulation import apply_event_to_simulator, run_simulation_step, collect_simulation_data, initialize_simulation_data
- 
-        sim = global_state['sim']
-        wn = global_state['wn']
- 
+        agent = global_state['agent']
+        env = global_state['env']
+        state = global_state['rl_state']
+        edge_feats = global_state['rl_edge_feats']
+        sim = env.simulation
+        wn = env.simulation._wn
+        
         # Initialize variables
         current_time = current_time or 0
         sim_data = sim_data or initialize_simulation_data()
@@ -1347,7 +1394,7 @@ def handle_simulation_step(step_clicks, play_intervals, sim_initialized, current
                     status_messages.append(dbc.Alert(f"❌ Failed: {message}", color="danger", dismissable=True))
 
             # Run a single simulation step
-            success, new_sim_time, message = run_simulation_step(sim, wn)
+            success, new_sim_time, message, new_state, new_edge_feats, reward = run_simulation_step(sim, wn, agent, env, state, edge_feats)
 
             if not success:
                 status_messages.append(dbc.Alert(f"⚠️ Step warning: {message}", color="warning", dismissable=True))
@@ -1356,6 +1403,10 @@ def handle_simulation_step(step_clicks, play_intervals, sim_initialized, current
             # Update tracking variables
             current_time = new_sim_time
             new_sim_data['time'].append(new_sim_time)
+
+            global_state['rl_state'] = new_state
+            global_state['rl_edge_feats'] = new_edge_feats
+            global_state['total_reward'] += reward
 
             # Collect data for monitored elements
             monitored_nodes = monitored_nodes or list(wn.node_name_list)[:5]
@@ -1535,7 +1586,7 @@ def update_simulation_progress(sim_initialized, current_time, sim_data, duration
                 ),
                 html.Small(f"Step Progress: {completed_steps} / {planned_total_steps}", className="text-muted"),
                 dbc.Progress(
-                    value=step_progress*100,
+                    value=(step_progress*100),
                     label=f"{completed_steps} steps",
                     color="info",
                     className="mb-2"
@@ -1572,11 +1623,12 @@ def update_simulation_results(sim_data, current_time, sim_initialized, monitored
     if not sim_initialized:
         return dbc.Alert("🚀 Initialize simulation to see real-time monitoring charts", color="info")
     
+    wn = global_state['env'].simulation._wn if global_state['env'] and global_state['env'].simulation else None
     # Use default selections if none provided
-    if not monitored_nodes and global_state['wn'] is not None:
-        monitored_nodes = list(global_state['wn'].node_name_list)[:3]
-    if not monitored_links and global_state['wn'] is not None:
-        monitored_links = list(global_state['wn'].link_name_list)[:3]
+    if not monitored_nodes and wn is not None:
+        monitored_nodes = list(wn.node_name_list)[:3]
+    if not monitored_links and wn is not None:
+        monitored_links = list(wn.link_name_list)[:3]
     
     try:
         # Create simple monitoring charts with multi-select functionality
@@ -2021,8 +2073,8 @@ def handle_event_application(btn_clicks, event_types,
             # If simulation is running, apply immediately, otherwise add to scheduled events
             if global_state.get('sim') and global_state.get('sim_initialized'):
                 # Apply event immediately
-                sim = global_state['sim']
-                wn = global_state['wn']
+                sim = global_state['env'].simulation
+                wn = sim._wn
                 success, message = apply_event_to_simulator(sim, wn, event)
                 
                 if success:
@@ -2133,13 +2185,12 @@ def update_event_history_display(scheduled_events, applied_events, current_time,
 )
 def update_current_values_display(current_time, sim_initialized, monitored_nodes, monitored_links):
     """Update current values display for monitored elements."""
-    if not sim_initialized or global_state['wn'] is None:
+    wn = global_state['env'].simulation._wn if global_state['env'] and global_state['env'].simulation else None
+    if not sim_initialized or wn is None:
         return html.P("No data available", className="text-muted")
     
     try:
-        from modules.simulation import get_current_element_values
-        wn = global_state['wn']
-        
+        from modules.simulation import get_current_element_values        
         # Get current values
         current_pressures, current_flows = get_current_element_values(
             wn, monitored_nodes or [], monitored_links or []
@@ -2457,7 +2508,7 @@ def reset_batch_animation(n_clicks, network_loaded):
         # Reset simulation state and re-initialize for batch mode
         if global_state['wn'] is not None:
             from modules.simulation import reset_simulation_state, initialize_simulation_data
-            from mwntr.sim.interactive_network_simulator import MWNTRInteractiveSimulator
+            from mwntr.sim.interactive_network_simulator import InteractiveWNTRSimulator
             
             import copy
             if 'original_wn' in global_state:
@@ -2470,7 +2521,7 @@ def reset_batch_animation(n_clicks, network_loaded):
                     pass
 
             # Create fresh simulator instance
-            global_state['sim'] = MWNTRInteractiveSimulator(global_state['wn'])
+            global_state['sim'] = InteractiveWNTRSimulator(global_state['wn'])
             
             # Initialize the simulator with proper settings for batch mode
             duration_seconds = 24 * 3600  # 24 hours default
@@ -2970,8 +3021,8 @@ def initialize_batch_simulation(network_loaded, batch_events, metadata):
     try:
         # Initialize simulation if needed
         if global_state['wn'] is not None:
-            from mwntr.sim.interactive_network_simulator import MWNTRInteractiveSimulator
-            global_state['sim'] = MWNTRInteractiveSimulator(global_state['wn'])
+            from mwntr.sim.interactive_network_simulator import InteractiveWNTRSimulator
+            global_state['sim'] = InteractiveWNTRSimulator(global_state['wn'])
             
             # Initialize the simulator with proper settings
             duration_seconds = 24 * 3600  # 24 hours default
