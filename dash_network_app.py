@@ -562,7 +562,7 @@ def create_interactive_content():
         ]),
         html.Div(id="interactive-main-area", style={'display': 'none'}, children=interactive_main_content),
         # Interval for auto-stepping when Play is active
-        dcc.Interval(id="interactive-play-interval", interval=5000, n_intervals=0, disabled=True)
+        dcc.Interval(id="interactive-play-interval", interval=2000, n_intervals=0, disabled=True)
     ]
 
 def create_batch_content():
@@ -837,7 +837,7 @@ def load_network_callback(n_clicks, source, example_file, upload_contents, uploa
             global_state['network_file_path'] = file_path
             
             # Create simulator instance
-            from mwntr.sim.interactive_network_simulator import InteractiveWNTRSimulator
+            from wntr.sim.interactive_network_simulator import InteractiveWNTRSimulator
 
 
             env = WDNEnv(base_wn=wn,
@@ -1228,7 +1228,7 @@ def handle_simulation_initialize(n_clicks, duration_hours, timestep_minutes, net
     try:
         sim = global_state['env'].simulation
         
-        # Initialize simulation
+        # Initialize simulatsion
         duration_hours = int(duration_hours or 24)
         timestep_minutes = int(timestep_minutes or 60)
         
@@ -1260,16 +1260,10 @@ def handle_simulation_initialize(n_clicks, duration_hours, timestep_minutes, net
 
         sim = env.simulation
         global_state['agent'] = agent
-
-        sim.init_simulation(
-            global_timestep=timestep_seconds,
-            duration=duration_seconds
-        )
-        
         global_state['wn'] = env.simulation._wn 
         global_state['total_reward'] = 0
 
-        print("Simulation initialized successfully.", sim)
+        print("Simulation initialized successfully.")
         
         status = dbc.Alert("🟢 Simulation Initialized Successfully!", color="success")
         return True, status, duration_hours, timestep_minutes
@@ -1366,6 +1360,7 @@ def handle_simulation_step(step_clicks, play_intervals, sim_initialized, current
         state = global_state['rl_state']
         edge_feats = global_state['rl_edge_feats']
         sim = env.simulation
+
         wn = env.simulation._wn
         
         # Initialize variables
@@ -2508,7 +2503,7 @@ def reset_batch_animation(n_clicks, network_loaded):
         # Reset simulation state and re-initialize for batch mode
         if global_state['wn'] is not None:
             from modules.simulation import reset_simulation_state, initialize_simulation_data
-            from mwntr.sim.interactive_network_simulator import InteractiveWNTRSimulator
+            from wntr.sim.interactive_network_simulator import InteractiveWNTRSimulator
             
             import copy
             if 'original_wn' in global_state:
@@ -3021,7 +3016,7 @@ def initialize_batch_simulation(network_loaded, batch_events, metadata):
     try:
         # Initialize simulation if needed
         if global_state['wn'] is not None:
-            from mwntr.sim.interactive_network_simulator import InteractiveWNTRSimulator
+            from wntr.sim.interactive_network_simulator import InteractiveWNTRSimulator
             global_state['sim'] = InteractiveWNTRSimulator(global_state['wn'])
             
             # Initialize the simulator with proper settings

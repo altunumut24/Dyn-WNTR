@@ -33,9 +33,9 @@ import json
 import datetime
 
 # Import WNTR network components
-from mwntr.network import WaterNetworkModel, Node, Link, LinkStatus
-from mwntr.network.elements import Junction, Tank, Reservoir, Pipe, Pump, Valve
-from mwntr.graphics.network import plot_interactive_network
+from wntr.network import WaterNetworkModel, Node, Link, LinkStatus
+from wntr.network.elements import Junction, Tank, Reservoir, Pipe, Pump, Valve
+from wntr.graphics.network import plot_interactive_network
 
 # Import our configuration constants
 from .config import (

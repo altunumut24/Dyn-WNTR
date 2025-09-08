@@ -26,8 +26,8 @@ from typing import List, Dict, Any, Optional, Tuple
 import streamlit as st
 
 # Import WNTR components for water network simulation
-from mwntr.sim.interactive_network_simulator import InteractiveWNTRSimulator
-from mwntr.network import WaterNetworkModel
+from wntr.sim.interactive_network_simulator import InteractiveWNTRSimulator
+from wntr.network import WaterNetworkModel
 
 # Import our configuration settings
 from .config import (

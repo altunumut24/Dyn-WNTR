@@ -32,8 +32,8 @@ import pandas as pd
 from typing import List, Dict, Any, Optional
 
 # Import WNTR components
-from mwntr.network import WaterNetworkModel
-from mwntr.sim.interactive_network_simulator import InteractiveWNTRSimulator
+from wntr.network import WaterNetworkModel
+from wntr.sim.interactive_network_simulator import InteractiveWNTRSimulator
 
 # Import our configuration and simulation functions
 from .config import NODE_EVENTS, LINK_EVENTS, DEFAULT_MONITORED_NODES_COUNT, DEFAULT_MONITORED_LINKS_COUNT

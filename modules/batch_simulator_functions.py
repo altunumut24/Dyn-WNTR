@@ -40,9 +40,9 @@ import numpy as np
 import json
 
 # Import WNTR components
-from mwntr.sim.interactive_network_simulator import InteractiveWNTRSimulator
-from mwntr.network import WaterNetworkModel, Node, Link, LinkStatus
-from mwntr.network.elements import Junction, Tank, Reservoir, Pipe, Pump, Valve
+from wntr.sim.interactive_network_simulator import InteractiveWNTRSimulator
+from wntr.network import WaterNetworkModel, Node, Link, LinkStatus
+from wntr.network.elements import Junction, Tank, Reservoir, Pipe, Pump, Valve
 
 def load_events_from_json(uploaded_file) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """

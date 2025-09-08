@@ -20,7 +20,7 @@ import numpy as np
 import os
 
 # Import WNTR components directly for Dash compatibility
-from mwntr.network import WaterNetworkModel
+from wntr.network import WaterNetworkModel
 
 # Import configuration
 from modules.config import (

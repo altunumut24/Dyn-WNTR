@@ -12,11 +12,10 @@ sys.path.append("../..")
 #from wntr.sim.interactive_network_simulator import InteractiveWNTRSimulator
 #from wntr.network.model import WaterNetworkModel
 #from wntr.network.elements import LinkStatus, Junction
-
 from modules.rl.agents.dqn_agent import DQNAgent
-from mwntr.sim.interactive_network_simulator import InteractiveWNTRSimulator
-from mwntr.network.model import WaterNetworkModel
-from mwntr.network.elements import LinkStatus, Junction
+from wntr.sim.interactive_network_simulator import InteractiveWNTRSimulator
+from wntr.network.model import WaterNetworkModel
+from wntr.network.elements import LinkStatus, Junction
 
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -90,9 +89,6 @@ class WDNEnv():
         unique_edges = sorted({(min(u, v), max(u, v)) for (u, v) in self.edge_map.keys()})
         self.agent.set_valid_edges(np.array(unique_edges, dtype=np.int64))
         self.no_op_action = len(unique_edges)  # E -> no-op action is the last one
-
-        #ve = torch.tensor(self.agent.valid_edges, device=device).long()  # shape [E,2]
-        #self.agent.valid_edges_linear = ve[:,0]*len(self.node_list) + ve[:,1]  # shape [E]
 
         self.wn = wn
 
@@ -194,7 +190,6 @@ class WDNEnv():
         :param snap: Snapshot of the simulation containing node and edge data
         :return: Calculated reward
         """
-        results = self.simulation.get_results()
         snap = self.simulation.extract_snapshot()
         print("Calculating reward...")
 
@@ -215,8 +210,7 @@ class WDNEnv():
             for node_name in self.leak_nodes:
                 node = snap['nodes'][node_name]
                 print(f"  Leak at {node_name}: area={node['leak_area']}, demand={node['leak_demand']}, status={node['leak_status']}", file=self.episode_log_file if self.episode_log_file else sys.stdout)
-                #if node['leak_status'] == 1:
-                #    total_leak += node['leak_demand']
+
             leaking_nodes = [(name, val["leak_demand"]) for (name, val) in snap['nodes'].items() if val['leak_status'] == 1]
             print(f"Leaking Nodes ({len(leaking_nodes)}): {leaking_nodes}", file=self.episode_log_file if self.episode_log_file else sys.stdout)
         
@@ -245,7 +239,7 @@ class WDNEnv():
             if random.random() < 0.5:
                 # add a leak with some random parameters
                 if len(self.leak_nodes) < 5:
-                    node_name = random.choice(list(filter(lambda n: n not in self.leak_nodes and hasattr(self.wn.get_node(n), 'demand_timeseries_list'), self.node_list)))
+                    node_name = random.choice(list(filter(lambda n: n not in self.leak_nodes and hasattr(self.wn.get_node(n), 'demand_timeseries_list'), self.wn.junction_name_list)))
                     self.simulation.start_leak(node_name, leak_area=0.03)
                     print(f"@@@@ Added leak at {node_name} @@@", file=self.episode_log_file if self.episode_log_file else sys.stdout)
                     self.leak_nodes.append(node_name)
@@ -259,7 +253,7 @@ class WDNEnv():
         else:
             if random.random() < 0.5:
                 # add a random demand to a random node
-                node_name = random.choice(list(filter(lambda n: n not in self.demanding_nodes and hasattr(self.wn.get_node(n), 'demand_timeseries_list'), self.node_list)))
+                node_name = random.choice(list(filter(lambda n: n not in self.demanding_nodes and hasattr(self.wn.get_node(n), 'demand_timeseries_list'), self.wn.junction_name_list)))
                 self.simulation.add_demand(node_name, base_demand=0.1, name='gaussian')
                 print(f"@@@@ Added demand at {node_name} @@@", file=self.episode_log_file if self.episode_log_file else sys.stdout)
                 self.demanding_nodes.append(node_name)
@@ -291,7 +285,7 @@ class WDNEnv():
                 self.simulation.open_pipe(link_name)
                 self.closed_links -= 1
 
-        print("Stepping simulation...")
+        print(f"Stepping simulation...{self.simulation}")
         #if random.random() < 0.01:
         #    self.add_random_event()
         try: 
