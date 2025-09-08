@@ -21,6 +21,7 @@ Architecture overview:
 6. Results visualization and analysis
 """
 
+from sympy import comp
 import dash
 from dash import dcc, html, Input, Output, State, callback, ALL, MATCH, ctx, no_update, Patch
 import dash_bootstrap_components as dbc
@@ -51,6 +52,7 @@ from modules.visualization import (
 
 from modules.rl.envs.wdn_env import WDNEnv
 from modules.rl.agents.dqn_agent import DQNAgent
+from wntr.network.elements import LinkStatus
 
 def create_simple_monitoring_chart(elements, selected_elements, chart_type="pressure", sim_data=None):
     """Create monitoring chart with selected elements - from plotly_restyle_test.py"""
@@ -199,6 +201,9 @@ def create_stores():
         # View mode control (dual vs single)
         dcc.Store(id='view-mode', data='dual'),
         dcc.Store(id='batch-view-mode', data='dual'),
+
+        # RL agent log store (list of strings)
+        dcc.Store(id='rl-agent-logs', data=[]),
     ]
 
 # Batch layout removed - to be implemented from scratch
@@ -484,6 +489,45 @@ def create_interactive_content():
                 ])
             ], width=12, id="primary-map-col")
         ], className="mb-3"),
+
+        # Monitoring controls row
+        dbc.Row([
+            dbc.Col([
+                dbc.Card([
+                    dbc.CardHeader(html.H5("🤖 RL Agent Log", className="mb-0")),
+                    dbc.CardBody([
+                        dbc.Row([
+                            dbc.Col(
+                                dbc.Button("Toggle", id="rl-log-toggle-btn", color="secondary", size="sm"),
+                                width="auto"
+                            ),
+                            dbc.Col(
+                                dbc.Button("Clear", id="rl-log-clear-btn", color="light", size="sm", className="ms-2"),
+                                width="auto"
+                            ),
+                        ], className="mb-2"),
+                        dbc.Collapse(
+                            id="rl-log-collapse",
+                            is_open=False,
+                            children=html.Div(
+                                id="rl-agent-log-view",
+                                style={
+                                    "maxHeight": "220px",
+                                    "overflowY": "auto",
+                                    "backgroundColor": "#f8f9fa",
+                                    "border": "1px solid #e9ecef",
+                                    "padding": "10px",
+                                    "borderRadius": "4px",
+                                    "fontFamily": "monospace",
+                                    "fontSize": "12px",
+                                    "whiteSpace": "pre-wrap"
+                                }
+                            )
+                        )
+                    ])
+                ])
+            ], width=12)
+        ], className="mt-3"),
         
         # Secondary State Map (Demands/Leaks/Closures) - Shown below in dual view
         dbc.Row([
@@ -564,6 +608,38 @@ def create_interactive_content():
         # Interval for auto-stepping when Play is active
         dcc.Interval(id="interactive-play-interval", interval=2000, n_intervals=0, disabled=True)
     ]
+
+# Toggle the RL log collapse
+@app.callback(
+    Output('rl-log-collapse', 'is_open'),
+    Input('rl-log-toggle-btn', 'n_clicks'),
+    State('rl-log-collapse', 'is_open'),
+    prevent_initial_call=True
+)
+def toggle_rl_log(n, is_open):
+    return not is_open if n else (is_open or False)
+
+# Clear the RL log
+@app.callback(
+    Output('rl-agent-logs', 'data', allow_duplicate=True),
+    Input('rl-log-clear-btn', 'n_clicks'),
+    prevent_initial_call=True
+)
+def clear_rl_log(n):
+    if n:
+        return []
+    return dash.no_update
+
+# Render the RL log view
+@app.callback(
+    Output('rl-agent-log-view', 'children'),
+    Input('rl-agent-logs', 'data')
+)
+def render_rl_log(log_lines):
+    if not log_lines:
+        return html.Div("No logs yet.", className="text-muted")
+    # Join lines with newline and render in <pre> to preserve formatting
+    return html.Pre("\n".join(log_lines))
 
 def create_batch_content():
     """Create the simplified batch simulator content."""
@@ -1331,7 +1407,9 @@ def handle_simulation_reset(n_clicks, network_loaded):
      Output('simulation-data', 'data', allow_duplicate=True),
      Output('applied-events', 'data', allow_duplicate=True),
      Output('scheduled-events', 'data', allow_duplicate=True),
-     Output('status-messages-area', 'children', allow_duplicate=True)],
+     Output('status-messages-area', 'children', allow_duplicate=True),
+     Output('rl-agent-logs', 'data', allow_duplicate=True)],
+
     [Input('step-btn', 'n_clicks'),
      Input('interactive-play-interval', 'n_intervals')],
     [State('sim-initialized', 'data'),
@@ -1340,17 +1418,18 @@ def handle_simulation_reset(n_clicks, network_loaded):
      State('scheduled-events', 'data'),
      State('applied-events', 'data'),
      State('pressure-monitoring-nodes', 'data'),
-     State('flow-monitoring-links', 'data')],
+     State('flow-monitoring-links', 'data'),
+     State('rl-agent-logs', 'data')],
     prevent_initial_call=True
 )
 def handle_simulation_step(step_clicks, play_intervals, sim_initialized, current_time, sim_data, 
-                           scheduled_events, applied_events, monitored_nodes, monitored_links):
+                           scheduled_events, applied_events, monitored_nodes, monitored_links, rl_logs):
     """Handle simulation step button."""
     triggered_id = ctx.triggered_id if hasattr(ctx, "triggered_id") else None
 
     # valid triggers: manual step or interval tick
     if triggered_id not in ["step-btn", "interactive-play-interval"] or not sim_initialized or global_state['env'].simulation is None:
-        return no_update, no_update, no_update, no_update, no_update
+        return no_update, no_update, no_update, no_update, no_update, no_update
 
     step_multiplier = 1  # always single step per trigger
  
@@ -1372,6 +1451,8 @@ def handle_simulation_step(step_clicks, play_intervals, sim_initialized, current
         new_applied_events = list(applied_events)
         new_scheduled_events = list(scheduled_events)
         new_sim_data = dict(sim_data)
+        new_log_lines = list(rl_logs or [])
+
 
         # Execute the required number of steps
         for _ in range(step_multiplier):
@@ -1389,7 +1470,13 @@ def handle_simulation_step(step_clicks, play_intervals, sim_initialized, current
                     status_messages.append(dbc.Alert(f"❌ Failed: {message}", color="danger", dismissable=True))
 
             # Run a single simulation step
-            success, new_sim_time, message, new_state, new_edge_feats, reward = run_simulation_step(sim, wn, agent, env, state, edge_feats)
+            success, new_sim_time, message, new_state, new_edge_feats, reward, action = run_simulation_step(sim, wn, agent, env, state, edge_feats)
+
+            u,v = agent.valid_edges[action]
+            link_name = env.edge_map[(u, v)]
+            status = env.simulation._wn.get_link(link_name).status
+
+            action_message = f"Action: Open pipe {link_name} between {u} and {v}" if status == LinkStatus.Closed else f"Action: Close pipe {link_name} between {u} and {v}"
 
             if not success:
                 status_messages.append(dbc.Alert(f"⚠️ Step warning: {message}", color="warning", dismissable=True))
@@ -1403,6 +1490,24 @@ def handle_simulation_step(step_clicks, play_intervals, sim_initialized, current
             global_state['rl_edge_feats'] = new_edge_feats
             global_state['total_reward'] += reward
 
+
+             # NEW: compose a log line with action, reward and total
+            ts = datetime.datetime.now().strftime("%H:%M:%S")
+            try:
+                reward_txt = f"{float(reward):.4f}"
+            except Exception:
+                reward_txt = str(reward)
+            try:
+                total_txt = f"{float(global_state.get('total_reward', 0.0)):.4f}"
+            except Exception:
+                total_txt = str(global_state.get('total_reward', 0.0))
+
+            action_message = f"Action: Open valve between {u} and {v}"
+            log_line = f"{ts} | reward={reward_txt} | total={total_txt} | {action_message}"
+            new_log_lines.append(log_line)
+
+
+
             # Collect data for monitored elements
             monitored_nodes = monitored_nodes or list(wn.node_name_list)[:5]
             monitored_links = monitored_links or list(wn.link_name_list)[:5]
@@ -1411,11 +1516,11 @@ def handle_simulation_step(step_clicks, play_intervals, sim_initialized, current
         if not status_messages:
             status_messages.append(dbc.Alert("✅ Step completed successfully!", color="success", dismissable=True))
 
-        return current_time, new_sim_data, new_applied_events, new_scheduled_events, status_messages
+        return current_time, new_sim_data, new_applied_events, new_scheduled_events, status_messages, new_log_lines
  
     except Exception as e:
         error_msg = dbc.Alert(f"❌ Step error: {str(e)}", color="danger", dismissable=True)
-        return no_update, no_update, no_update, no_update, [error_msg]
+        return no_update, no_update, no_update, no_update, [error_msg], no_update
 
 # Update step button state
 @app.callback(
@@ -1543,6 +1648,7 @@ def update_simulation_progress(sim_initialized, current_time, sim_data, duration
         # Calculate progress
         time_progress = min(current_time / total_duration_seconds, 1.0)
         completed_steps = len((sim_data or {}).get('time', []))
+        completed_steps = completed_steps + 1 if completed_steps > 0 else 0
         planned_total_steps = int(total_duration_seconds / timestep_seconds)
         step_progress = min(completed_steps / planned_total_steps, 1.0) if planned_total_steps > 0 else 0
         

@@ -289,7 +289,7 @@ def run_simulation_step(sim: InteractiveWNTRSimulator, wn: WaterNetworkModel, ag
                         link.flow = flow_data.loc[current_time_step, link_name]
         
         # Return success with formatted time message
-        return True, current_time, f"Simulation step completed at {datetime.timedelta(seconds=int(current_time))}", next_state, next_edge_feats, reward
+        return True, current_time, f"Simulation step completed at {datetime.timedelta(seconds=int(current_time))}", next_state, next_edge_feats, reward, action
         
     except Exception as e:
         # Something went wrong during simulation step
