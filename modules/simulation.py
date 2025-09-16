@@ -76,10 +76,12 @@ def load_network_model(inp_file: str) -> Optional[WaterNetworkModel]:
     except FileNotFoundError:
         # File doesn't exist - show user-friendly error
         st.error(f"Error: INP file '{inp_file}' not found. Place it in the same directory as the script.")
+        print(f"Error: INP file '{inp_file}' not found.")
         return None
     except Exception as e:
         # Other errors (corrupted file, wrong format, etc.)
         st.error(f"Error loading INP file '{inp_file}': {e}")
+        print(f"Error loading INP file '{inp_file}': {e}")
         return None
 
 

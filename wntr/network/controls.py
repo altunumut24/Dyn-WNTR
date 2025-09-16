@@ -2288,7 +2288,16 @@ class ControlChangeTracker(Observer):
         """
         obj_attr = subject.target()
         val = getattr(*obj_attr)
+        obj, attr = obj_attr
+
+
         for ref_point in self._previous_values.keys():
+            if obj_attr not in self._previous_values.get(ref_point, {}):
+                try:
+                    self._previous_values.setdefault(ref_point, {})[obj_attr] = getattr(obj, attr)
+                except Exception:
+                    self._previous_values.setdefault(ref_point, {})[obj_attr] = None
+
             if val == self._previous_values[ref_point][obj_attr]:
                 self._changed[ref_point].discard(obj_attr)
             else:

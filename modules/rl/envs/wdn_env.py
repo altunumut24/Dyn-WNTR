@@ -92,9 +92,19 @@ class WDNEnv():
 
         self.wn = wn
 
-        self.episode_count = 0
+        self.episode_count = -1
         self.step_count = 0
         self.episode_log_file = None
+
+        self.last_action = None
+
+        self.previous_state = {
+            "average_satisfaction": 1.0,
+            "total_leak": 0.0
+        }
+
+        self.last_action = None
+        self.retries = 0
 
         self.reset(global_timestep=global_timestep, duration=simulation_duration)
 
@@ -165,21 +175,26 @@ class WDNEnv():
         self.episode_log_file = None
 
         #add 3 leaks and 5 demands to random nodes
-        for _ in range(3):
-            node_name = random.choice(list(filter(lambda x: x not in self.leak_nodes, self.wn.junction_name_list)))
-            self.simulation.start_leak(node_name, leak_area=0.03)
-            print(f"@@@@ Added leak at {node_name} @@@", file=self.episode_log_file if self.episode_log_file else sys.stdout)
-            self.leak_nodes.append(node_name)
+        #for _ in range(3):
+        #    node_name = random.choice(list(filter(lambda x: x not in self.leak_nodes, self.wn.junction_name_list)))
+        #    self.simulation.start_leak(node_name, leak_area=0.03)
+        #    print(f"@@@@ Added leak at {node_name} @@@", file=self.episode_log_file if self.episode_log_file else sys.stdout)
+        #    self.leak_nodes.append(node_name)
         
         for _ in range(5):
             node_name = random.choice(list(filter(lambda x: x not in self.leak_nodes and x not in self.demanding_nodes, self.wn.junction_name_list)))
-            random_demand = 0.5 #random.uniform(0.1, 0.5)
+            random_demand = 0.1 #random.uniform(0.1, 0.5)
             self.simulation.add_demand(node_name, base_demand=random_demand, name='constant', category='user_added')
             print(f"@@@@ Added demand at {node_name} @@@", file=self.episode_log_file if self.episode_log_file else sys.stdout)
             self.demanding_nodes.append(node_name)
 
         # return initial (state, edge_features)
         self.wn = wn
+
+        self.previous_state = {
+            "average_satisfaction": 1.0,
+            "total_leak": 0.0
+        }
 
         self.simulation.step_sim()
         return self.get_observation()
@@ -191,20 +206,19 @@ class WDNEnv():
         :return: Calculated reward
         """
         snap = self.simulation.extract_snapshot()
-        print("Calculating reward...")
 
-        #with open(f"single_round_logs/snapshot.json", "w") as f:
+
+        #timestep = self.simulation.get_sim_time()
+        #with open(f"single_round_logs/snapshot-{timestep}.json", "w") as f:
         #    import json
         #    json.dump(snap, f, indent=4)
 
-
         total_leak = sum(n['leak_demand'] for n in snap['nodes'].values() if n['leak_status'] == 1)
         satisfaction_nodes = [n['satisfied_demand'] for n in snap['nodes'].values() if n['expected_demand'] > 0.0001]
-        print(f"Satisfaction nodes: {satisfaction_nodes}", file=self.episode_log_file if self.episode_log_file else sys.stdout)
         if len(satisfaction_nodes) == 0:
             average_satisfaction = 1
         else:
-            average_satisfaction: np.floating[copy.Any] = np.average(satisfaction_nodes)
+            average_satisfaction = np.average(satisfaction_nodes)
         print(f"Total Leak: {total_leak}, Average Satisfaction: {average_satisfaction}", file=self.episode_log_file if self.episode_log_file else sys.stdout)
         if len(self.leak_nodes) > 0:
             for node_name in self.leak_nodes:
@@ -213,13 +227,12 @@ class WDNEnv():
 
             leaking_nodes = [(name, val["leak_demand"]) for (name, val) in snap['nodes'].items() if val['leak_status'] == 1]
             print(f"Leaking Nodes ({len(leaking_nodes)}): {leaking_nodes}", file=self.episode_log_file if self.episode_log_file else sys.stdout)
-        
         unsatisfied_nodes = [(name, val["satisfied_demand"], val["expected_demand"]) for (name, val) in snap['nodes'].items() if val['expected_demand'] > 0.0001 and val['satisfied_demand'] < 0.999]
         print(f"Unsatisfied Nodes ({len(unsatisfied_nodes)}): {unsatisfied_nodes if len(unsatisfied_nodes) < 20 else 'Too many'} ", file=self.episode_log_file if self.episode_log_file else sys.stdout)
         print(f"Demanding nodes ({len(self.demanding_nodes)}): {self.demanding_nodes if len(self.demanding_nodes) < 20 else 'Too many'} ", file=self.episode_log_file if self.episode_log_file else sys.stdout)
         for node_name in self.demanding_nodes:
             node = snap['nodes'][node_name]
-            print(f"  Demand at {node_name}: expected={node['expected_demand']}, satisfied={node['satisfied_demand']}") #, #file=self.episode_log_file if self.episode_log_file else sys.stdout)
+            print(f"  Demand at {node_name}: expected={node['expected_demand']}, satisfied={node['satisfied_demand']}" ,file=self.episode_log_file if self.episode_log_file else sys.stdout)
 
         action_penalty = 0
         if (total_leak > 0 or average_satisfaction < 0.95) and action == self.no_op_action:
@@ -227,11 +240,16 @@ class WDNEnv():
         elif total_leak == 0 and average_satisfaction >= 0.95 and action != self.no_op_action:
             action_penalty += 0.5
 
-        average_satisfaction = (2 * average_satisfaction) - 1  # [-1, 1]
-        leak_penalty = float(np.tanh(total_leak)) * 2  # 0.8 tunes how quickly penalty grows
-        reward = -leak_penalty + float(average_satisfaction) - float(action_penalty) 
-        print(f"Reward ({reward}) = -({leak_penalty}) + {average_satisfaction} - {action_penalty}", file=self.episode_log_file if self.episode_log_file else sys.stdout)
+        improved_total_leak_reward = -1 if total_leak > self.previous_state["total_leak"] else 0 if total_leak == self.previous_state["total_leak"] else 1
+        improved_satisfaction_reward = -1 if average_satisfaction < self.previous_state["average_satisfaction"] else 0 if average_satisfaction == self.previous_state["average_satisfaction"] else 1
+        
+        self.previous_state["total_leak"] = total_leak
+        self.previous_state["average_satisfaction"] = average_satisfaction
 
+        average_satisfaction = (2 * average_satisfaction) - 1  # [-1, 1]
+        leak_penalty = float(np.tanh(total_leak)) * 2
+        reward = -leak_penalty + float(average_satisfaction) - float(action_penalty) + float(improved_satisfaction_reward) + float(improved_total_leak_reward)
+        print(f"Reward ({reward}) = -({leak_penalty}) + ({average_satisfaction}) - ({action_penalty}) + ({improved_satisfaction_reward}) + ({improved_total_leak_reward})", file=self.episode_log_file if self.episode_log_file else sys.stdout)
         return reward
 
     def add_random_event(self):
@@ -281,9 +299,11 @@ class WDNEnv():
             if is_open:
                 self.simulation.close_pipe(link_name)
                 self.closed_links += 1
+                self.last_action = (link_name, 'close')
             else:
                 self.simulation.open_pipe(link_name)
                 self.closed_links -= 1
+                self.last_action = (link_name, 'open')
 
         print(f"Stepping simulation...{self.simulation}")
         #if random.random() < 0.01:
@@ -291,11 +311,30 @@ class WDNEnv():
         try: 
             self.simulation.step_sim()  # advance one hydraulic timestep
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             print(f"#### Simulation step failed: {e}")
             print(f"Simulation step failed: {e}", file=self.episode_log_file if self.episode_log_file else sys.stdout)
-            return EnvInfo(self.get_observation(), -10000, True)
+            self.retries += 1
+            if self.retries < 3:
+                print(f"####@@@@####\nRetrying simulation step (attempt {self.retries})...\n####@@@@####", file=self.episode_log_file if self.episode_log_file else sys.stdout)
+                if self.last_action:
+                    link_name, act = self.last_action
+                    if act == 'close':
+                        self.simulation.open_pipe(link_name)
+                        self.closed_links -= 1
+                        print(f"Reverted last action: opened {link_name}", file=self.episode_log_file if self.episode_log_file else sys.stdout)
+                    else:
+                        self.simulation.close_pipe(link_name)
+                        self.closed_links += 1
+                        print(f"Reverted last action: closed {link_name}", file=self.episode_log_file if self.episode_log_file else sys.stdout)
+                    self.last_action = None
+                return EnvInfo(self.get_observation(), -10, False)  # retry the same action
+            else:
+                print(f"Exceeded maximum retries. Ending episode.", file=self.episode_log_file if self.episode_log_file else sys.stdout)
+                return EnvInfo(self.get_observation(), -10000, True)
         
-
+        self.retries = 0
         next_state, next_edge_feats = self.get_observation()
         
 

@@ -1067,12 +1067,12 @@ def ensure_monitoring_on_init(sim_initialized, current_nodes, current_links, met
      Input('selected-links', 'data'),
      Input('sim-initialized', 'data'),
      Input('simulation-data', 'data'),
-     Input('current-sim-time', 'data'),
+     #Input('current-sim-time', 'data'),
      Input('show-labels-always', 'data')],
     prevent_initial_call=True
 )
 def update_network_maps(network_loaded, map_height, node_size, 
-                      selected_nodes, selected_links, sim_initialized, simulation_data, current_time, show_labels_always):
+                      selected_nodes, selected_links, sim_initialized, simulation_data, show_labels_always):
     """Update both network map visualizations."""
     try:
         if not network_loaded or global_state['env'] is None:
@@ -1158,9 +1158,9 @@ def handle_map_clicks(primary_click_data, state_click_data, network_loaded, meta
     elif ctx_triggered == 'state-graph' and state_click_data:
         click_data = state_click_data
     
-    if not click_data:
+    if not click_data or 'points' not in click_data or not click_data['points']:
         return None, [], [], False
-    
+
     # Extract element info from click data
     point = click_data['points'][0]
     

@@ -1481,6 +1481,21 @@ class WNTRSimulator(WaterNetworkSimulator):
         for l in self._prev_isolated_links:
             link = self._wn.get_link(l)
             link._is_isolated = False
+        
+        # NEW: Resync the internal adjacency from actual link.status values.
+        # This avoids relying solely on change_tracker when statuses were modified outside controls.
+        try:
+            data = self._internal_graph.data
+            ndx_map = self._map_link_to_internal_graph_data_ndx
+            # zero everything, then set ones for currently open/active links
+            data[:] = 0
+            for link_name, link in self._wn.links():
+                ndx1, ndx2 = ndx_map[link]
+                if link.status != LinkStatus.Closed:
+                    data[ndx1] = 1
+                    data[ndx2] = 1
+        except Exception as e:
+            logger.debug(f"internal graph resync skipped: {e}")
 
         node_indicator = np.ones(self._wn.num_nodes, dtype=self._int_dtype)
         check_for_isolated_junctions(self._source_ids, node_indicator, self._internal_graph.indptr,
@@ -1502,9 +1517,13 @@ class WNTRSimulator(WaterNetworkSimulator):
                 isolated_links.add(l)
 
         if logger_level <= logging.DEBUG:
-            if len(isolated_junctions) > 0 or len(isolated_links) > 0:
+            if len(isolated_junctions) > 0 or len(isolated_links) > 0:                
                 logger.debug('isolated junctions: {0}'.format(isolated_junctions))
                 logger.debug('isolated links: {0}'.format(isolated_links))
+        
+        #TODO REMOVE PRINT STATEMENTS
+        print('isolated junctions: {0}'.format(isolated_junctions))
+        print('isolated links: {0}'.format(isolated_links))
         wntr.sim.hydraulics.update_model_for_isolated_junctions_and_links(self._model, self._wn, self._model_updater,
                                                                           self._prev_isolated_junctions,
                                                                           self._prev_isolated_links,

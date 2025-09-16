@@ -5,6 +5,7 @@ from uuid import uuid4
 from matplotlib import pyplot as plt
 import numpy as np
 import pandas as pd
+import scipy as sp
 import wntr
 from wntr.network.controls import _ControlType
 import wntr.sim.hydraulics
@@ -17,6 +18,8 @@ from wntr.network.model import WaterNetworkModel
 from copy import deepcopy
 import plotly.express as px
 import plotly.graph_objs as go
+import networkx as nx
+
 
 from wntr.sim.core import _Diagnostics, _ValveSourceChecker, _solver_helper
 
@@ -149,12 +152,77 @@ class InteractiveWNTRSimulator(wntr.sim.WNTRSimulator):
             self.node_res['expected_demand'][node_name].append(0.0)
             self.node_res['satisfied_demand'][node_name].append(1.0)
 
+    def _open_links_graph(self) -> nx.Graph:
+        G = nx.Graph()
+        for n, _ in self._wn.nodes():
+            G.add_node(n)
+        for name, link in self._wn.links():
+            # only currently open/active links
+            if getattr(link, "status", LinkStatus.Open) != LinkStatus.Closed:
+                G.add_edge(link.start_node_name, link.end_node_name, key=name)
+        return G
+
+    def _unserved_junctions(self):
+        G = self._open_links_graph()
+        sources = set(self._wn.reservoir_name_list + self._wn.tank_name_list)
+        served = set()
+        for s in sources:
+            if s in G:
+                served |= set(nx.node_connected_component(G, s))
+        return [j for j in self._wn.junction_name_list if j not in served]
+
+    def _jacobian_info(self):
+        try:
+            self._model.set_structure()
+            J = self._model.evaluate_jacobian(x=None)
+            if not sp.sparse.issparse(J):
+                return "Jacobian is dense with shape {}".format(np.shape(J))
+            nnz = J.nnz
+            shape = J.shape
+            # crude singularity signal: try spsolve on a random RHS and catch warnings
+            try:
+                _ = sp.sparse.linalg.spsolve(J.tocsc(), np.ones(shape[0]))
+                msg = "Jacobian ok, shape={}, nnz={}".format(shape, nnz)
+            except Exception as e:
+                msg = "Jacobian solve failed: {} | shape={}, nnz={}".format(e, shape, nnz)
+            return msg
+        except Exception as e:
+            return f"Jacobian diagnostics failed: {e}"
+
+    def _param_sanity(self):
+        bad = []
+        for name, p in self._wn.pipes():
+            if getattr(p, "length", 1.0) <= 0:
+                bad.append(f"{name}: length<=0")
+            if getattr(p, "diameter", 1.0) <= 0:
+                bad.append(f"{name}: diameter<=0")
+            C = getattr(p, "roughness", 100.0)
+            if C <= 0 or C > 1000:
+                bad.append(f"{name}: roughness={C}")
+        return bad
+
+    def _log_failure_context(self, mesg: str):
+        unserved = self._unserved_junctions()
+        if unserved:
+            print(f"Time {self._get_time()} — {len(unserved)} junctions disconnected from sources "
+                         f"(first 20): {unserved[:20]}")
+        else:
+            print(f"Time {self._get_time()} — all junctions connected to a source.")
+
+        bad = self._param_sanity()
+        if bad:
+            print("Suspicious pipe parameters (first 20): " + "; ".join(bad[:20]))
+        print("Solver message: " + mesg)
+        print(self._jacobian_info())
+
     def step_sim(self):
         try:
             if not self.initialized_simulation:
                 raise RuntimeError('Simulation not initialized. Call init_simulation() before running the simulation.')
             if self._terminated:
                 return
+
+            print("STEP SIM CALLED: Current simulation time:", self._wn.sim_time)
 
             if self._wn.sim_time == 0:
                 first_step = True
@@ -173,6 +241,25 @@ class InteractiveWNTRSimulator(wntr.sim.WNTRSimulator):
 
             self._run_feasibility_controls()
 
+            if len(self.demand_modifications) > 0:
+                self._apply_demand_modifications()
+
+            if len(self.tank_head_modifications) > 0:
+                for tank_name, head in self.tank_head_modifications:
+                    tank = self._wn.get_node(tank_name)
+                    #head = elevation + level
+                    #max_level = head - elevation
+                    if tank.max_level < (head - tank.elevation):
+                        raise ValueError(f"Tank {tank_name} max level {tank.max_level} is less than {head - tank.elevation}, change max_level before calling init_simulation")
+                    tank._head = head
+                    tank._prev_head = head
+                self.tank_head_modifications.clear()
+                
+
+            if self.rebuild_hydraulic_model:
+                self._model, self._model_updater = wntr.sim.hydraulics.create_hydraulic_model(wn=self._wn, HW_approx=self._hw_approx)
+                self.rebuild_hydraulic_model = False
+                
             # Prepare for solve
             self._update_internal_graph()
             num_isolated_junctions, num_isolated_links = self._get_isolated_junctions_and_links()
@@ -182,12 +269,14 @@ class InteractiveWNTRSimulator(wntr.sim.WNTRSimulator):
             wntr.sim.models.param.source_head_param(self._model, self._wn)
             wntr.sim.models.param.expected_demand_param(self._model, self._wn)
 
+            
             self.diagnostics.run(last_step='presolve controls, rules, and model updates', next_step='solve')
 
             solver_status, mesg, iter_count = _solver_helper(self._model, self._solver, self._solver_options)
             if solver_status == 0 and self._backup_solver is not None:
                 solver_status, mesg, iter_count = _solver_helper(self._model, self._backup_solver, self._backup_solver_options)
             if solver_status == 0:
+                self._log_failure_context(mesg)
                 if self._convergence_error:
                     logger.error('Simulation did not converge at time ' + self._get_time() + '. ' + mesg) 
                     raise RuntimeError('Simulation did not converge at time ' + self._get_time() + '. ' + mesg)
@@ -258,25 +347,6 @@ class InteractiveWNTRSimulator(wntr.sim.WNTRSimulator):
             self._wn.sim_time += self._hydraulic_timestep
             #overstep = float(self._wn.sim_time) % self._hydraulic_timestep
             #self._wn.sim_time -= overstep
-
-            if len(self.demand_modifications) > 0:
-                self._apply_demand_modifications()
-
-            if len(self.tank_head_modifications) > 0:
-                for tank_name, head in self.tank_head_modifications:
-                    tank = self._wn.get_node(tank_name)
-                    #head = elevation + level
-                    #max_level = head - elevation
-                    if tank.max_level < (head - tank.elevation):
-                        raise ValueError(f"Tank {tank_name} max level {tank.max_level} is less than {head - tank.elevation}, change max_level before calling init_simulation")
-                    tank._head = head
-                    tank._prev_head = head
-                self.tank_head_modifications.clear()
-                
-
-            if self.rebuild_hydraulic_model:
-                self._model, self._model_updater = wntr.sim.hydraulics.create_hydraulic_model(wn=self._wn, HW_approx=self._hw_approx)
-                self.rebuild_hydraulic_model = False
             
             if self._wn.sim_time > self._wn.options.time.duration:
                 self._terminated = True
@@ -371,7 +441,7 @@ class InteractiveWNTRSimulator(wntr.sim.WNTRSimulator):
     def _close_link(self, link_name) -> None:
         link = self._wn.get_link(link_name)
         c1 = wntr.network.controls.ControlAction(link, "status", LinkStatus.Closed)
-        condition = wntr.network.controls.SimTimeCondition(self._wn, None, self.get_sim_time() + self.hydraulic_timestep() )
+        condition = wntr.network.controls.SimTimeCondition(self._wn, None, self.get_sim_time()) #+ self.hydraulic_timestep() )
         c = wntr.network.controls.Control(condition=condition, then_action=c1) 
         self._add_control(c)
         self._register_controls_with_observers()
@@ -381,7 +451,7 @@ class InteractiveWNTRSimulator(wntr.sim.WNTRSimulator):
     def _open_link(self, link_name):
         link = self._wn.get_link(link_name)
         c1 = wntr.network.controls.ControlAction(link, "status", LinkStatus.Open)
-        condition = wntr.network.controls.SimTimeCondition(self._wn, None, self.get_sim_time() + self.hydraulic_timestep() )
+        condition = wntr.network.controls.SimTimeCondition(self._wn, None, self.get_sim_time()) #+ self.hydraulic_timestep() )
         c = wntr.network.controls.Control(condition=condition, then_action=c1)
         self._add_control(c)
         self._register_controls_with_observers()
